@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Bernalillo County – Motivated Seller Leads</title>
+<style>
+:root{--bg:#f8f7f4;--card:#fff;--border:#e2e0d8;--text:#1a1a18;--muted:#6b6a65;--accent:#1d6b4e;--accent2:#e85d24;--warn:#854f0b;--tag-bg:#eaf3de;--tag-fg:#3b6d11;--red-bg:#fcebeb;--red-fg:#a32d2d;--amber-bg:#faeeda;--amber-fg:#854f0b;--purple-bg:#eeedfe;--purple-fg:#26215c;--teal-bg:#e1f5ee;--teal-fg:#085041;--shadow:0 1px 4px rgba(0,0,0,.08)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+header{background:#fff;border-bottom:1px solid var(--border);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;position:sticky;top:0;z-index:100}
+header h1{font-size:17px;font-weight:600;color:var(--accent)}
+header .meta{font-size:12px;color:var(--muted)}
+.toolbar{padding:14px 24px;background:#fff;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.toolbar input,.toolbar select{border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:13px;background:#fff;color:var(--text);outline:none}
+.toolbar input:focus,.toolbar select:focus{border-color:#888}
+.toolbar label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.toolbar .spacer{flex:1}
+.btn{padding:7px 14px;border-radius:6px;border:1px solid var(--border);background:#fff;cursor:pointer;font-size:13px;color:var(--text)}
+.btn:hover{background:var(--bg)}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn.primary:hover{opacity:.9}
+.stats{padding:14px 24px;display:flex;gap:12px;flex-wrap:wrap}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 18px;min-width:120px}
+.stat-card .num{font-size:22px;font-weight:600}
+.stat-card .lbl{font-size:11px;color:var(--muted);margin-top:2px}
+.stat-card.hot .num{color:var(--accent2)}
+.content{padding:0 24px 40px}
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:10px;overflow:hidden;box-shadow:var(--shadow)}
+thead th{background:#f4f3ee;padding:10px 12px;text-align:left;font-size:12px;font-weight:600;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer;user-select:none}
+thead th:hover{color:var(--text)}
+tbody tr{border-bottom:1px solid var(--border);transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#faf9f6}
+tbody td{padding:10px 12px;vertical-align:top;font-size:13px}
+.score-badge{display:inline-block;padding:3px 8px;border-radius:99px;font-size:11px;font-weight:600;min-width:34px;text-align:center}
+.score-high{background:var(--teal-bg);color:var(--teal-fg)}
+.score-mid{background:var(--amber-bg);color:var(--amber-fg)}
+.score-low{background:var(--border);color:var(--muted)}
+.score-hot{background:var(--red-bg);color:var(--red-fg)}
+.flag{display:inline-block;padding:2px 7px;border-radius:99px;font-size:10px;margin:1px 2px 1px 0;white-space:nowrap}
+.flag-lp{background:var(--red-bg);color:var(--red-fg)}
+.flag-fc{background:var(--red-bg);color:var(--red-fg)}
+.flag-jud{background:var(--amber-bg);color:var(--amber-fg)}
+.flag-tax{background:var(--amber-bg);color:var(--amber-fg)}
+.flag-mech{background:var(--purple-bg);color:var(--purple-fg)}
+.flag-prob{background:var(--purple-bg);color:var(--purple-fg)}
+.flag-llc{background:#e6f1fb;color:#0c447c}
+.flag-new{background:var(--tag-bg);color:var(--tag-fg)}
+.flag-default{background:var(--border);color:var(--muted)}
+.doc-type{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;background:#f4f3ee;color:var(--muted)}
+a.doc-link{color:var(--accent);text-decoration:none;font-size:12px}
+a.doc-link:hover{text-decoration:underline}
+.address-block{font-size:12px;color:var(--text);line-height:1.4}
+.address-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+.no-data{text-align:center;padding:60px 20px;color:var(--muted)}
+.no-data h3{font-size:16px;margin-bottom:8px}
+.pagination{display:flex;align-items:center;justify-content:center;gap:8px;padding:18px}
+.pagination button{padding:5px 11px;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;font-size:13px}
+.pagination button:disabled{opacity:.4;cursor:default}
+.pagination .page-info{font-size:13px;color:var(--muted)}
+#toast{position:fixed;bottom:24px;right:24px;background:#1a1a18;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:999}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🏠 Bernalillo County Motivated Seller Leads</h1>
+    <div class="meta" id="meta">Loading…</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn primary" onclick="exportCSV()">⬇ Export GHL CSV</button>
+    <button class="btn" onclick="location.reload()">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Search owner, doc#, address…" oninput="applyFilters()" style="width:220px"/>
+  <select id="filterType" onchange="applyFilters()">
+    <option value="">All doc types</option>
+  </select>
+  <select id="filterCat" onchange="applyFilters()">
+    <option value="">All categories</option>
+    <option value="preforeclosure">Pre-foreclosure</option>
+    <option value="judgment">Judgment</option>
+    <option value="lien">Lien</option>
+    <option value="tax">Tax</option>
+    <option value="probate">Probate</option>
+    <option value="noc">NOC</option>
+    <option value="release">Release</option>
+  </select>
+  <select id="filterScore" onchange="applyFilters()">
+    <option value="">All scores</option>
+    <option value="80">Score 80+</option>
+    <option value="60">Score 60+</option>
+    <option value="40">Score 40+</option>
+  </select>
+  <label><input type="checkbox" id="onlyAddress" onchange="applyFilters()"/> Has address</label>
+  <label><input type="checkbox" id="onlyNew" onchange="applyFilters()"/> New this week</label>
+  <span class="spacer"></span>
+  <span id="countLabel" style="font-size:12px;color:var(--muted)"></span>
+</div>
+
+<div class="stats" id="stats"></div>
+
+<div class="content">
+  <table id="leadsTable">
+    <thead>
+      <tr>
+        <th onclick="sortBy('score')">Score ↕</th>
+        <th onclick="sortBy('doc_type')">Doc Type ↕</th>
+        <th onclick="sortBy('filed')">Filed ↕</th>
+        <th onclick="sortBy('owner')">Owner / Grantor ↕</th>
+        <th>Flags</th>
+        <th>Property Address</th>
+        <th>Mailing Address</th>
+        <th onclick="sortBy('amount')">Amount ↕</th>
+        <th>Doc Link</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let allRecords = [];
+let filtered = [];
+let sortKey = 'score';
+let sortDir = -1;
+let page = 1;
+const PAGE_SIZE = 50;
+
+const FLAG_CLASS = {
+  'Lis pendens':       'flag-lp',
+  'Pre-foreclosure':   'flag-fc',
+  'Judgment lien':     'flag-jud',
+  'Tax lien':          'flag-tax',
+  'Mechanic lien':     'flag-mech',
+  'Probate / estate':  'flag-prob',
+  'LLC / corp owner':  'flag-llc',
+  'New this week':     'flag-new',
+};
+
+async function loadData() {
+  try {
+    const r = await fetch('records.json?_=' + Date.now());
+    const data = await r.json();
+    allRecords = data.records || [];
+    const dr = data.date_range || {};
+    document.getElementById('meta').textContent =
+      `Fetched: ${data.fetched_at ? new Date(data.fetched_at).toLocaleString() : '—'} · `
+      + `Range: ${dr.from || '—'} → ${dr.to || '—'} · `
+      + `${data.total || 0} records · ${data.with_address || 0} with address`;
+
+    populateDocTypeFilter();
+    renderStats(data);
+    applyFilters();
+  } catch(e) {
+    document.getElementById('meta').textContent = 'Error loading records.json';
+    document.getElementById('tableBody').innerHTML =
+      '<tr><td colspan="9"><div class="no-data"><h3>No data yet</h3><p>Run the scraper to populate records.</p></div></td></tr>';
+  }
+}
+
+function populateDocTypeFilter() {
+  const types = [...new Set(allRecords.map(r => r.doc_type))].sort();
+  const sel = document.getElementById('filterType');
+  types.forEach(t => {
+    const o = document.createElement('option');
+    o.value = t; o.textContent = t;
+    sel.appendChild(o);
+  });
+}
+
+function renderStats(data) {
+  const records = data.records || [];
+  const byScore = s => records.filter(r => r.score >= s).length;
+  const html = [
+    {n: data.total || 0, l: 'Total Leads', cls:''},
+    {n: data.with_address || 0, l: 'With Address', cls:''},
+    {n: byScore(80), l: 'Score 80+', cls:'hot'},
+    {n: byScore(60), l: 'Score 60+', cls:''},
+    {n: records.filter(r => r.flags && r.flags.includes('Lis pendens')).length, l: 'Lis Pendens', cls:''},
+    {n: records.filter(r => r.flags && r.flags.includes('Pre-foreclosure')).length, l: 'Pre-Foreclosure', cls:'hot'},
+  ].map(s => `<div class="stat-card ${s.cls}"><div class="num">${s.n}</div><div class="lbl">${s.l}</div></div>`).join('');
+  document.getElementById('stats').innerHTML = html;
+}
+
+function applyFilters() {
+  const q      = document.getElementById('search').value.toLowerCase();
+  const type   = document.getElementById('filterType').value;
+  const cat    = document.getElementById('filterCat').value;
+  const minSc  = parseInt(document.getElementById('filterScore').value) || 0;
+  const onlyAd = document.getElementById('onlyAddress').checked;
+  const onlyNw = document.getElementById('onlyNew').checked;
+
+  filtered = allRecords.filter(r => {
+    if (type && r.doc_type !== type) return false;
+    if (cat  && r.cat !== cat)       return false;
+    if (r.score < minSc)             return false;
+    if (onlyAd && !r.prop_address && !r.mail_address) return false;
+    if (onlyNw && !(r.flags||[]).includes('New this week')) return false;
+    if (q) {
+      const hay = [r.owner,r.doc_num,r.prop_address,r.mail_address,r.grantee,r.legal]
+        .join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  filtered.sort((a,b) => {
+    let av = a[sortKey]||'', bv = b[sortKey]||'';
+    if (typeof av === 'number') return sortDir*(av-bv);
+    return sortDir * String(av).localeCompare(String(bv));
+  });
+
+  page = 1;
+  document.getElementById('countLabel').textContent = `${filtered.length} records`;
+  renderPage();
+}
+
+function sortBy(key) {
+  if (sortKey === key) sortDir *= -1;
+  else { sortKey = key; sortDir = -1; }
+  applyFilters();
+}
+
+function renderPage() {
+  const start = (page-1)*PAGE_SIZE;
+  const slice = filtered.slice(start, start+PAGE_SIZE);
+  const tbody = document.getElementById('tableBody');
+
+  if (!slice.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="no-data"><h3>No matching records</h3></div></td></tr>';
+    document.getElementById('pagination').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = slice.map(r => {
+    const sc = r.score || 0;
+    const scClass = sc>=80?'score-hot':sc>=60?'score-high':sc>=40?'score-mid':'score-low';
+    const flags = (r.flags||[]).map(f =>
+      `<span class="flag ${FLAG_CLASS[f]||'flag-default'}">${f}</span>`
+    ).join('');
+
+    const propAddr = [r.prop_address, r.prop_city, r.prop_state, r.prop_zip]
+      .filter(Boolean).join(', ');
+    const mailAddr = [r.mail_address, r.mail_city, r.mail_state, r.mail_zip]
+      .filter(Boolean).join(', ');
+    const amt = r.amount ? `$${Number(r.amount.toString().replace(/[^0-9.]/g,'')).toLocaleString()}` : '—';
+
+    return `<tr>
+      <td><span class="score-badge ${scClass}">${sc}</span></td>
+      <td><span class="doc-type">${r.doc_type||'—'}</span><br>
+          <span style="font-size:11px;color:var(--muted)">${r.cat_label||''}</span></td>
+      <td style="white-space:nowrap">${r.filed||'—'}</td>
+      <td>
+        <div style="font-weight:500">${r.owner||'—'}</div>
+        ${r.grantee?`<div style="font-size:11px;color:var(--muted)">→ ${r.grantee}</div>`:''}
+        ${r.doc_num?`<div style="font-size:11px;color:var(--muted)">#${r.doc_num}</div>`:''}
+      </td>
+      <td>${flags||'<span style="color:var(--muted);font-size:11px">—</span>'}</td>
+      <td><div class="address-block">${propAddr||'<span style="color:var(--muted)">—</span>'}</div></td>
+      <td><div class="address-block">${mailAddr||'<span style="color:var(--muted)">—</span>'}</div></td>
+      <td style="white-space:nowrap">${amt}</td>
+      <td>${r.clerk_url?`<a class="doc-link" href="${r.clerk_url}" target="_blank" rel="noopener">View Doc ↗</a>`:'—'}</td>
+    </tr>`;
+  }).join('');
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  document.getElementById('pagination').innerHTML = totalPages <= 1 ? '' : `
+    <button onclick="goPage(${page-1})" ${page<=1?'disabled':''}>‹ Prev</button>
+    <span class="page-info">Page ${page} of ${totalPages}</span>
+    <button onclick="goPage(${page+1})" ${page>=totalPages?'disabled':''}>Next ›</button>
+  `;
+}
+
+function goPage(p) { page=p; renderPage(); window.scrollTo(0,0); }
+
+function exportCSV() {
+  const cols = ['First Name','Last Name','Mailing Address','Mailing City','Mailing State','Mailing Zip',
+    'Property Address','Property City','Property State','Property Zip',
+    'Lead Type','Document Type','Date Filed','Document Number','Amount/Debt Owed',
+    'Seller Score','Motivated Seller Flags','Source','Public Records URL'];
+
+  function splitName(full) {
+    if (!full) return ['',''];
+    const p = full.trim().split(' ');
+    if (p.length===1) return [p[0],''];
+    if (p[0].endsWith(',')) return [p.slice(1).join(' '), p[0].replace(',','')];
+    return [p[0], p.slice(1).join(' ')];
+  }
+
+  const rows = [cols.join(',')];
+  filtered.forEach(r => {
+    const [fn,ln] = splitName(r.owner||'');
+    const row = [
+      fn, ln,
+      r.mail_address||'', r.mail_city||'', r.mail_state||'', r.mail_zip||'',
+      r.prop_address||'', r.prop_city||'', r.prop_state||'NM', r.prop_zip||'',
+      r.cat_label||'', r.doc_type||'', r.filed||'', r.doc_num||'',
+      r.amount||'', r.score||0,
+      (r.flags||[]).join('; '),
+      'Bernalillo County Clerk',
+      r.clerk_url||'',
+    ].map(v => `"${String(v).replace(/"/g,'""')}"`);
+    rows.push(row.join(','));
+  });
+
+  const blob = new Blob([rows.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bernalillo_leads_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  showToast(`Exported ${filtered.length} records`);
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display='block';
+  setTimeout(()=>{ t.style.display='none'; }, 2800);
+}
+
+loadData();
+</script>
+</body>
+</html>
