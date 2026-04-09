@@ -722,8 +722,8 @@ async def run_clerk_scrape(date_from: str, date_to: str) -> list[dict]:
             try:
                 rows = await async_retry(
                     lambda dt=doc_type: clerk_search_type(page, dt, date_from, date_to),
-                    attempts=3,
-                    delay=5.0,
+                    attempts=1,
+                    delay=2.0,
                 )
                 all_rows.extend(rows)
             except Exception:
