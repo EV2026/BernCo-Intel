@@ -3,19 +3,19 @@ Bernalillo County, NM — Motivated Seller Lead Scraper
 ======================================================
 Playwright (async) for clerk portal  ·  requests+BS4 for appraiser
 Outputs: dashboard/records.json  +  data/records.json
-Author: auto-generated production build
+v2 — disclaimer handling + debug screenshots
 """
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import csv
 import io
 import json
 import logging
 import os
 import re
-import sys
 import time
 import traceback
 import zipfile
@@ -25,7 +25,7 @@ from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Page, BrowserContext, TimeoutError as PwTimeout
+from playwright.async_api import async_playwright, Page, BrowserContext
 
 # ── optional dbfread ────────────────────────────────────────────────────────
 try:
@@ -347,6 +347,51 @@ def lookup_owner(name: str, index: dict[str, dict]) -> dict:
 # CLERK PORTAL  (Playwright)
 # ═══════════════════════════════════════════════════════════════════════════
 
+async def handle_disclaimer(page: Page) -> None:
+    """Click through any disclaimer / terms page before the search form."""
+    disclaimer_texts = [
+        "Accept", "I Agree", "I Accept", "Agree", "Continue",
+        "OK", "Yes", "Proceed", "Enter", "I understand",
+    ]
+    for txt in disclaimer_texts:
+        try:
+            btn = page.get_by_role("button", name=re.compile(txt, re.I))
+            if await btn.count() > 0:
+                log.info("  Clicking disclaimer button: '%s'", txt)
+                await btn.click()
+                await page.wait_for_load_state("networkidle", timeout=15_000)
+                return
+        except Exception:
+            pass
+    for txt in disclaimer_texts:
+        try:
+            link = page.get_by_role("link", name=re.compile(txt, re.I))
+            if await link.count() > 0:
+                log.info("  Clicking disclaimer link: '%s'", txt)
+                await link.click()
+                await page.wait_for_load_state("networkidle", timeout=15_000)
+                return
+        except Exception:
+            pass
+
+
+async def debug_page(page: Page, label: str) -> None:
+    """Log page title, URL, visible text, and save a screenshot."""
+    try:
+        title = await page.title()
+        url   = page.url
+        text  = await page.inner_text("body")
+        log.info("  [DEBUG %s] title=%r  url=%s", label, title, url)
+        log.info("  [DEBUG %s] body=%s", label, text[:600].replace("\n", " "))
+        shot_path = f"/tmp/debug_{label}.png"
+        await page.screenshot(path=shot_path, full_page=False)
+        img_b64 = base64.b64encode(Path(shot_path).read_bytes()).decode()
+        log.info("  [SCREENSHOT_B64_START_%s]%s[SCREENSHOT_B64_END_%s]",
+                 label, img_b64, label)
+    except Exception as exc:
+        log.warning("  [DEBUG %s] Could not capture: %s", label, exc)
+
+
 async def clerk_search_type(
     page: Page,
     doc_type: str,
@@ -358,38 +403,73 @@ async def clerk_search_type(
     date_from / date_to: "MM/DD/YYYY"
     """
     results: list[dict] = []
+    is_first = (doc_type == TARGET_TYPES[0])
 
     try:
         log.info("  Searching clerk for type=%s", doc_type)
 
-        # ── navigate / reload search page ────────────────────────────────
-        await async_retry(lambda: page.goto(CLERK_SEARCH, wait_until="networkidle", timeout=30_000))
+        # ── Navigate ─────────────────────────────────────────────────────
+        await async_retry(
+            lambda: page.goto(CLERK_SEARCH, wait_until="networkidle", timeout=45_000)
+        )
 
-        # ── wait for the search form to be visible ───────────────────────
-        await page.wait_for_selector("input, select", timeout=15_000)
+        if is_first:
+            await debug_page(page, "after_load")
 
-        # ── try to select doc type ───────────────────────────────────────
-        selectors_tried = [
-            "select[name*='DocType']",
-            "select[name*='doctype']",
-            "select[id*='DocType']",
-            "select[id*='doctype']",
-            "#cboDocType",
-            "select[name='cboDocType']",
+        # ── Handle disclaimer ────────────────────────────────────────────
+        await handle_disclaimer(page)
+
+        if is_first:
+            await debug_page(page, "after_disclaimer")
+
+        # ── Wait for form ────────────────────────────────────────────────
+        form_selectors = [
+            "select", "input[type='text']", "input[type='search']",
+            "#SearchFormControl", "form", ".search-form",
+            "[id*='Search']", "[id*='search']",
+        ]
+        form_found = False
+        for sel in form_selectors:
+            try:
+                await page.wait_for_selector(sel, timeout=8_000)
+                form_found = True
+                log.info("  Form found via: %s", sel)
+                break
+            except Exception:
+                pass
+
+        if not form_found:
+            log.warning("  No search form found for %s", doc_type)
+            if is_first:
+                await debug_page(page, "no_form")
+            return results
+
+        # ── Select doc type ──────────────────────────────────────────────
+        select_sels = [
+            "select[name*='DocType']", "select[name*='doctype']",
+            "select[id*='DocType']",   "select[id*='doctype']",
+            "#cboDocType", "select[name='cboDocType']",
+            "select[id*='Type']", "select",
         ]
         selected_doc = False
-        for sel in selectors_tried:
+        for sel in select_sels:
             try:
                 el = page.locator(sel).first
                 if await el.count() > 0:
-                    await el.select_option(value=doc_type)
-                    selected_doc = True
-                    break
+                    options = await el.evaluate(
+                        "el => Array.from(el.options).map(o => o.value)"
+                    )
+                    if is_first:
+                        log.info("  Select %s options sample: %s", sel, options[:15])
+                    if doc_type in options:
+                        await el.select_option(value=doc_type)
+                        selected_doc = True
+                        log.info("  Selected %s via %s", doc_type, sel)
+                        break
             except Exception:
                 pass
 
         if not selected_doc:
-            # try label-based approach
             try:
                 await page.get_by_label(re.compile("doc.*type", re.I)).select_option(value=doc_type)
                 selected_doc = True
@@ -397,39 +477,43 @@ async def clerk_search_type(
                 pass
 
         if not selected_doc:
-            log.warning("    Could not select doc type %s — trying text search fallback", doc_type)
+            log.warning("  Could not select doc type %s", doc_type)
 
-        # ── fill date range ──────────────────────────────────────────────
-        date_from_selectors = [
-            "input[name*='DateFrom']", "input[name*='dateFrom']",
-            "input[id*='DateFrom']",   "input[id*='StartDate']",
+        # ── Fill dates ───────────────────────────────────────────────────
+        date_from_sels = [
+            "input[name*='DateFrom']", "input[id*='DateFrom']",
+            "input[name*='StartDate']","input[id*='StartDate']",
             "#txtDateFrom", "input[name='txtDateFrom']",
+            "input[placeholder*='from']", "input[placeholder*='From']",
         ]
-        date_to_selectors = [
-            "input[name*='DateTo']", "input[name*='dateTo']",
-            "input[id*='DateTo']",   "input[id*='EndDate']",
+        date_to_sels = [
+            "input[name*='DateTo']",   "input[id*='DateTo']",
+            "input[name*='EndDate']",  "input[id*='EndDate']",
             "#txtDateTo", "input[name='txtDateTo']",
+            "input[placeholder*='to']","input[placeholder*='To']",
         ]
 
-        async def fill_first(selectors: list[str], value: str) -> bool:
-            for sel in selectors:
+        async def fill_first(sels: list[str], value: str) -> bool:
+            for sel in sels:
                 try:
                     el = page.locator(sel).first
                     if await el.count() > 0:
+                        await el.triple_click()
                         await el.fill(value)
                         return True
                 except Exception:
                     pass
             return False
 
-        await fill_first(date_from_selectors, date_from)
-        await fill_first(date_to_selectors, date_to)
+        await fill_first(date_from_sels, date_from)
+        await fill_first(date_to_sels,   date_to)
 
-        # ── submit ───────────────────────────────────────────────────────
+        # ── Submit ───────────────────────────────────────────────────────
         submit_sels = [
             "input[type='submit']", "button[type='submit']",
-            "input[value*='Search']", "button:has-text('Search')",
+            "input[value*='Search']","button:has-text('Search')",
             "#btnSearch", "input[name='btnSearch']",
+            "button:has-text('Find')", "input[value*='Find']",
         ]
         submitted = False
         for sel in submit_sels:
@@ -441,25 +525,24 @@ async def clerk_search_type(
                     break
             except Exception:
                 pass
-
         if not submitted:
-            # try pressing Enter
             await page.keyboard.press("Enter")
 
         await page.wait_for_load_state("networkidle", timeout=30_000)
 
-        # ── paginate through all results ─────────────────────────────────
+        if is_first:
+            await debug_page(page, "after_search")
+
+        # ── Paginate ─────────────────────────────────────────────────────
         page_num = 0
         while True:
             page_num += 1
             html = await page.content()
             soup = BeautifulSoup(html, "lxml")
-
             rows = await parse_clerk_table(soup, doc_type, page.url)
             results.extend(rows)
-            log.info("    Page %d — %d rows (cumulative %d)", page_num, len(rows), len(results))
+            log.info("    Page %d — %d rows (total %d)", page_num, len(rows), len(results))
 
-            # look for "Next" pagination
             next_btn = None
             for candidate in soup.find_all(["a", "input", "button"]):
                 txt = candidate.get_text(strip=True).lower()
@@ -467,28 +550,23 @@ async def clerk_search_type(
                 if txt in ("next", "next >", ">", ">>") or val in ("next", "next >", ">"):
                     next_btn = candidate
                     break
-
             if next_btn is None:
                 break
 
-            # click next
             try:
                 onclick = next_btn.get("onclick", "")
                 m = re.search(r"__doPostBack\('([^']+)','([^']*)'\)", onclick)
                 if m:
-                    await page.evaluate(
-                        f"__doPostBack('{m.group(1)}', '{m.group(2)}')"
-                    )
+                    await page.evaluate(f"__doPostBack('{m.group(1)}', '{m.group(2)}')")
                 else:
                     txt = next_btn.get_text(strip=True)
-                    await page.get_by_text(re.compile(re.escape(txt), re.I)).click()
+                    await page.get_by_text(re.compile(re.escape(txt), re.I)).first.click()
                 await page.wait_for_load_state("networkidle", timeout=20_000)
             except Exception as exc:
-                log.warning("    Could not advance to next page: %s", exc)
+                log.warning("    Could not advance page: %s", exc)
                 break
 
             if page_num > 50:
-                log.warning("    Safety break at page 50")
                 break
 
     except Exception:
@@ -628,11 +706,11 @@ async def run_clerk_scrape(date_from: str, date_to: str) -> list[dict]:
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"],
         )
         ctx: BrowserContext = await browser.new_context(
             user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) "
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
@@ -828,7 +906,7 @@ async def main() -> None:
     session = requests.Session()
     session.headers.update({
         "User-Agent": (
-            "Mozilla/5.0 (X11; Linux x86_64) "
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36"
         )
