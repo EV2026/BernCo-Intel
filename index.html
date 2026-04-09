@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Bernalillo County — Motivated Seller Leads</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+<style>
+/* ── TOKENS ──────────────────────────────────────────────────────────── */
+:root {
+  --bg:       #0a0c10;
+  --surface:  #111318;
+  --border:   #1e2230;
+  --border2:  #2a2f42;
+  --text:     #e8eaf2;
+  --muted:    #6b7294;
+  --accent:   #f5a623;
+  --accent2:  #e84545;
+  --green:    #30d87e;
+  --blue:     #4a9eff;
+  --purple:   #9b6dff;
+  --tag-bg:   rgba(245,166,35,.12);
+  --tag-fc:   rgba(232,69,69,.12);
+  --tag-jud:  rgba(74,158,255,.12);
+  --tag-tax:  rgba(155,109,255,.12);
+  --tag-mec:  rgba(48,216,126,.12);
+  --ff-head:  'Syne', sans-serif;
+  --ff-body:  'DM Sans', sans-serif;
+  --ff-mono:  'JetBrains Mono', monospace;
+  --r:        8px;
+}
+
+/* ── RESET ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+html { scroll-behavior:smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--ff-body);
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ── NOISE OVERLAY ───────────────────────────────────────────────────── */
+body::before {
+  content:'';
+  position:fixed; inset:0; pointer-events:none; z-index:999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity:.4;
+}
+
+/* ── HEADER ──────────────────────────────────────────────────────────── */
+header {
+  position:sticky; top:0; z-index:100;
+  background: rgba(10,12,16,.92);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 24px;
+  display: flex; align-items:center; gap:20px;
+  flex-wrap:wrap;
+}
+.logo {
+  font-family: var(--ff-head);
+  font-size: 18px; font-weight:800;
+  letter-spacing:-.3px;
+  color: var(--text);
+  flex-shrink:0;
+}
+.logo span { color: var(--accent); }
+.meta-pill {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius:100px;
+  padding: 3px 12px;
+  font-family: var(--ff-mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+.meta-pill b { color: var(--text); }
+.header-spacer { flex:1; }
+
+/* ── TOOLBAR ──────────────────────────────────────────────────────────── */
+.toolbar {
+  display:flex; gap:8px; flex-wrap:wrap; align-items:center;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.search-wrap {
+  position:relative; flex:1; min-width:200px; max-width:360px;
+}
+.search-wrap svg {
+  position:absolute; left:10px; top:50%; transform:translateY(-50%);
+  color: var(--muted); pointer-events:none;
+}
+input[type=search] {
+  width:100%; padding: 7px 12px 7px 34px;
+  background: var(--bg); border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--text);
+  font-family: var(--ff-body); font-size:13px;
+  outline:none; transition: border-color .15s;
+}
+input[type=search]:focus { border-color: var(--accent); }
+
+select {
+  padding: 7px 30px 7px 10px;
+  background: var(--bg); border: 1px solid var(--border2);
+  border-radius: var(--r); color: var(--text);
+  font-family: var(--ff-body); font-size:13px;
+  outline:none; cursor:pointer; appearance:none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7294' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 8px center;
+  transition: border-color .15s;
+}
+select:focus { border-color: var(--accent); }
+
+.btn {
+  padding: 7px 14px; border-radius: var(--r);
+  border: 1px solid var(--border2);
+  background: var(--bg); color: var(--text);
+  font-family: var(--ff-body); font-size:13px;
+  cursor:pointer; transition: all .15s; white-space:nowrap;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn-primary {
+  background: var(--accent); color: #000; border-color: var(--accent);
+  font-weight:600;
+}
+.btn-primary:hover { background: #e0951a; color:#000; border-color:#e0951a; }
+
+/* ── STAT CARDS ──────────────────────────────────────────────────────── */
+.stats {
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap:12px; padding:16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding:14px 16px;
+  position:relative; overflow:hidden;
+  animation: fadeUp .35s ease both;
+}
+.stat-card::after {
+  content:''; position:absolute;
+  left:0; top:0; bottom:0; width:3px;
+  background: var(--accent); border-radius:3px 0 0 3px;
+}
+.stat-card.c-red::after   { background: var(--accent2); }
+.stat-card.c-blue::after  { background: var(--blue); }
+.stat-card.c-green::after { background: var(--green); }
+.stat-card.c-purple::after{ background: var(--purple); }
+.stat-num {
+  font-family: var(--ff-head); font-size:28px; font-weight:800;
+  line-height:1;
+}
+.stat-lbl {
+  margin-top:4px; font-size:11px; text-transform:uppercase;
+  letter-spacing:.08em; color: var(--muted);
+}
+
+/* ── TABLE AREA ──────────────────────────────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  padding: 0 24px 32px;
+}
+table {
+  width:100%; border-collapse:collapse;
+  min-width: 900px;
+}
+thead th {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border2);
+  padding: 10px 12px;
+  font-family: var(--ff-head); font-size:11px; font-weight:700;
+  text-transform:uppercase; letter-spacing:.08em; color: var(--muted);
+  text-align:left; white-space:nowrap; cursor:pointer;
+  user-select:none;
+  transition: color .15s;
+}
+thead th:hover { color: var(--text); }
+thead th.sort-asc::after  { content:' ↑'; color: var(--accent); }
+thead th.sort-desc::after { content:' ↓'; color: var(--accent); }
+
+tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background .1s;
+  animation: fadeUp .3s ease both;
+}
+tbody tr:hover { background: rgba(255,255,255,.02); }
+td {
+  padding: 10px 12px;
+  vertical-align:top;
+  font-size:13px;
+}
+td.mono { font-family: var(--ff-mono); font-size:12px; }
+
+/* ── SCORE BADGE ─────────────────────────────────────────────────────── */
+.score-badge {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:38px; height:24px; border-radius:6px;
+  font-family: var(--ff-mono); font-size:12px; font-weight:700;
+}
+.score-high   { background:rgba(232,69,69,.2);  color:var(--accent2); }
+.score-mid    { background:rgba(245,166,35,.2); color:var(--accent); }
+.score-low    { background:rgba(107,114,148,.2);color:var(--muted); }
+
+/* ── DOC TYPE CHIP ────────────────────────────────────────────────────── */
+.chip {
+  display:inline-block;
+  padding:2px 8px; border-radius:100px;
+  font-family: var(--ff-mono); font-size:11px; font-weight:500;
+  white-space:nowrap;
+}
+.chip-fc     { background:var(--tag-fc);  color:var(--accent2); }
+.chip-jud    { background:var(--tag-jud); color:var(--blue); }
+.chip-tax    { background:var(--tag-tax); color:var(--purple); }
+.chip-lien   { background:var(--tag-mec); color:var(--green); }
+.chip-probate{ background:rgba(245,166,35,.12); color:var(--accent); }
+.chip-other  { background:rgba(107,114,148,.12); color:var(--muted); }
+.chip-release{ background:rgba(107,114,148,.08); color:var(--muted); }
+
+/* ── FLAG TAGS ────────────────────────────────────────────────────────── */
+.flags { display:flex; flex-wrap:wrap; gap:4px; }
+.flag-tag {
+  display:inline-block;
+  padding:1px 6px; border-radius:4px;
+  font-size:10px; font-weight:500;
+  background:rgba(245,166,35,.1); color:var(--accent);
+  border:1px solid rgba(245,166,35,.2);
+}
+.flag-tag.danger {
+  background:rgba(232,69,69,.1); color:var(--accent2);
+  border-color:rgba(232,69,69,.2);
+}
+
+/* ── EMPTY / LOADING STATES ──────────────────────────────────────────── */
+.empty {
+  text-align:center; padding:60px 20px;
+  color:var(--muted);
+}
+.empty .big { font-size:48px; line-height:1; }
+.empty p { margin-top:12px; }
+.spinner {
+  display:inline-block; width:32px; height:32px;
+  border:3px solid var(--border2);
+  border-top-color: var(--accent);
+  border-radius:50%; animation:spin .7s linear infinite;
+}
+.loading { text-align:center; padding:80px; }
+
+/* ── DETAIL DRAWER ────────────────────────────────────────────────────── */
+.drawer-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,.6);
+  z-index:200; display:none;
+  backdrop-filter:blur(4px);
+}
+.drawer-overlay.open { display:block; }
+.drawer {
+  position:fixed; top:0; right:0; bottom:0; width:480px; max-width:95vw;
+  background: var(--surface);
+  border-left: 1px solid var(--border2);
+  z-index:201; overflow-y:auto;
+  transform:translateX(100%);
+  transition:transform .25s cubic-bezier(.4,0,.2,1);
+  display:flex; flex-direction:column;
+}
+.drawer.open { transform:translateX(0); }
+.drawer-head {
+  padding:20px 24px;
+  border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:12px;
+}
+.drawer-head h2 { font-family:var(--ff-head); font-size:18px; flex:1; }
+.close-btn {
+  width:32px; height:32px; border-radius:6px;
+  background:var(--bg); border:1px solid var(--border2);
+  color:var(--muted); font-size:18px;
+  cursor:pointer; display:grid; place-items:center;
+  transition:all .15s;
+}
+.close-btn:hover { color:var(--text); border-color:var(--text); }
+.drawer-body { padding:24px; flex:1; }
+.detail-row {
+  display:grid; grid-template-columns:130px 1fr;
+  gap:4px 12px; padding:10px 0;
+  border-bottom:1px solid var(--border);
+}
+.detail-row:last-child { border:none; }
+.detail-key {
+  font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--muted); padding-top:1px;
+}
+.detail-val { font-size:13px; }
+.detail-val a { color:var(--blue); text-decoration:none; }
+.detail-val a:hover { text-decoration:underline; }
+.drawer-foot {
+  padding:16px 24px;
+  border-top:1px solid var(--border);
+  display:flex; gap:8px;
+}
+
+/* ── PAGINATION ───────────────────────────────────────────────────────── */
+.pager {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 24px; border-top:1px solid var(--border);
+  font-size:13px; color:var(--muted);
+}
+.pager-btns { display:flex; gap:6px; }
+.pager-btn {
+  width:32px; height:32px; border-radius:6px;
+  background:var(--surface); border:1px solid var(--border2);
+  color:var(--text); cursor:pointer; font-size:13px;
+  display:grid; place-items:center; transition:all .15s;
+}
+.pager-btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+.pager-btn:disabled { opacity:.35; cursor:default; }
+.pager-btn.active { background:var(--accent); color:#000; border-color:var(--accent); }
+
+/* ── ANIMATIONS ──────────────────────────────────────────────────────── */
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* ── RESPONSIVE ──────────────────────────────────────────────────────── */
+@media (max-width:600px) {
+  header, .toolbar, .stats, .pager { padding-left:12px; padding-right:12px; }
+  .table-wrap { padding:0 0 32px; }
+  .stats { grid-template-columns:repeat(2, 1fr); gap:8px; }
+  .drawer { width:100vw; }
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">BCNM <span>Leads</span></div>
+  <div class="meta-pill" id="meta-range">Loading…</div>
+  <div class="meta-pill" id="meta-fetched"></div>
+  <div class="header-spacer"></div>
+  <button class="btn btn-primary" id="export-btn">⬇ Export GHL CSV</button>
+</header>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <div class="search-wrap">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    <input type="search" id="search" placeholder="Search owner, doc #, address…"/>
+  </div>
+  <select id="filter-cat">
+    <option value="">All categories</option>
+    <option value="foreclosure">Foreclosure</option>
+    <option value="judgment">Judgment</option>
+    <option value="lien">Lien</option>
+    <option value="tax">Tax</option>
+    <option value="probate">Probate</option>
+    <option value="other">Other</option>
+    <option value="release">Release</option>
+  </select>
+  <select id="filter-score">
+    <option value="">All scores</option>
+    <option value="70">Score ≥ 70 (Hot)</option>
+    <option value="50">Score ≥ 50 (Warm)</option>
+    <option value="30">Score ≥ 30</option>
+  </select>
+  <select id="filter-addr">
+    <option value="">All records</option>
+    <option value="1">Has property address</option>
+    <option value="0">No address found</option>
+  </select>
+  <span id="result-count" style="color:var(--muted); margin-left:4px; font-size:12px; white-space:nowrap;"></span>
+</div>
+
+<!-- STAT CARDS -->
+<div class="stats" id="stats"></div>
+
+<!-- TABLE -->
+<div class="table-wrap">
+  <div class="loading" id="loading"><div class="spinner"></div><p style="margin-top:12px;color:var(--muted)">Loading records…</p></div>
+  <table id="lead-table" style="display:none">
+    <thead>
+      <tr>
+        <th data-col="score">Score</th>
+        <th data-col="filed">Filed</th>
+        <th data-col="doc_type">Type</th>
+        <th data-col="owner">Owner / Grantor</th>
+        <th data-col="prop_address">Property Address</th>
+        <th data-col="amount">Amount</th>
+        <th data-col="flags">Flags</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div class="empty" id="empty-state" style="display:none">
+    <div class="big">🏚</div>
+    <p>No records match your filters.</p>
+  </div>
+</div>
+
+<!-- PAGER -->
+<div class="pager" id="pager" style="display:none">
+  <span id="pager-info"></span>
+  <div class="pager-btns" id="pager-btns"></div>
+</div>
+
+<!-- DETAIL DRAWER -->
+<div class="drawer-overlay" id="overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <div id="drawer-chip"></div>
+    <h2 id="drawer-title"></h2>
+    <button class="close-btn" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body"></div>
+  <div class="drawer-foot">
+    <a id="drawer-link" href="#" target="_blank" class="btn btn-primary" style="text-decoration:none">
+      Open Clerk Record ↗
+    </a>
+    <button class="btn" onclick="closeDrawer()">Close</button>
+  </div>
+</div>
+
+<script>
+// ── GLOBALS ────────────────────────────────────────────────────────────────
+let ALL_RECORDS = [];
+let FILTERED    = [];
+let SORT_COL    = "score";
+let SORT_DIR    = "desc";
+const PAGE_SIZE = 50;
+let PAGE        = 1;
+
+// ── CHIP HELPERS ────────────────────────────────────────────────────────────
+const CAT_CLASS = {
+  foreclosure:"chip-fc", judgment:"chip-jud", tax:"chip-tax",
+  lien:"chip-lien", probate:"chip-probate", other:"chip-other", release:"chip-release"
+};
+function chipHTML(r) {
+  const cls = CAT_CLASS[r.cat] || "chip-other";
+  return `<span class="chip ${cls}">${r.doc_type}</span>`;
+}
+function scoreHTML(n) {
+  const cls = n >= 70 ? "score-high" : n >= 50 ? "score-mid" : "score-low";
+  return `<span class="score-badge ${cls}">${n}</span>`;
+}
+function flagsHTML(flags) {
+  if (!flags?.length) return '<span style="color:var(--muted)">—</span>';
+  return `<div class="flags">${flags.map(f => {
+    const danger = ["Lis pendens","Pre-foreclosure","Judgment lien","Tax lien"].includes(f);
+    return `<span class="flag-tag${danger?" danger":""}">${f}</span>`;
+  }).join("")}</div>`;
+}
+function fmt$$(n) {
+  if (!n) return "—";
+  return "$" + Number(n).toLocaleString("en-US", {maximumFractionDigits:0});
+}
+function fmtAddr(r) {
+  if (!r.prop_address) return '<span style="color:var(--muted)">No address</span>';
+  let s = r.prop_address;
+  if (r.prop_city) s += `, ${r.prop_city}`;
+  if (r.prop_zip) s += ` ${r.prop_zip}`;
+  return s;
+}
+
+// ── LOAD DATA ───────────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const res = await fetch("records.json?_=" + Date.now());
+    const data = await res.json();
+
+    ALL_RECORDS = data.records || [];
+
+    // meta
+    document.getElementById("meta-range").innerHTML =
+      `Range: <b>${data.date_range || "—"}</b>`;
+    const fa = data.fetched_at ? new Date(data.fetched_at).toLocaleString() : "";
+    document.getElementById("meta-fetched").innerHTML =
+      fa ? `Updated <b>${fa}</b>` : "";
+
+    buildStats(data);
+    applyFilters();
+    document.getElementById("loading").style.display = "none";
+    document.getElementById("lead-table").style.display = "";
+  } catch(e) {
+    document.getElementById("loading").innerHTML =
+      `<p style="color:var(--accent2)">Failed to load records.json — ${e.message}</p>`;
+  }
+}
+
+// ── STATS ────────────────────────────────────────────────────────────────────
+function buildStats(data) {
+  const recs = data.records || [];
+  const bycat = {};
+  recs.forEach(r => { bycat[r.cat] = (bycat[r.cat]||0)+1; });
+  const hot = recs.filter(r => r.score >= 70).length;
+  const cards = [
+    {num:data.total,           lbl:"Total Leads",      cls:""},
+    {num:hot,                  lbl:"Hot Leads (≥70)",  cls:"c-red"},
+    {num:data.with_address,    lbl:"With Address",     cls:"c-green"},
+    {num:bycat.foreclosure||0, lbl:"Foreclosure",      cls:"c-red"},
+    {num:bycat.judgment||0,    lbl:"Judgment",         cls:"c-blue"},
+    {num:bycat.lien||0,        lbl:"Liens",            cls:"c-purple"},
+    {num:bycat.probate||0,     lbl:"Probate",          cls:""},
+    {num:bycat.tax||0,         lbl:"Tax",              cls:"c-purple"},
+  ];
+  const el = document.getElementById("stats");
+  el.innerHTML = cards.map((c,i) =>
+    `<div class="stat-card ${c.cls}" style="animation-delay:${i*40}ms">
+      <div class="stat-num">${c.num}</div>
+      <div class="stat-lbl">${c.lbl}</div>
+    </div>`
+  ).join("");
+}
+
+// ── FILTER + SORT ─────────────────────────────────────────────────────────────
+function applyFilters() {
+  const q     = document.getElementById("search").value.toLowerCase().trim();
+  const cat   = document.getElementById("filter-cat").value;
+  const minSc = parseInt(document.getElementById("filter-score").value) || 0;
+  const addr  = document.getElementById("filter-addr").value;
+
+  FILTERED = ALL_RECORDS.filter(r => {
+    if (cat   && r.cat !== cat) return false;
+    if (minSc && r.score < minSc) return false;
+    if (addr === "1" && !r.prop_address) return false;
+    if (addr === "0" && r.prop_address)  return false;
+    if (q) {
+      const hay = [r.owner,r.grantee,r.doc_num,r.prop_address,r.legal,
+                   r.doc_type,r.cat_label].join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  // sort
+  FILTERED.sort((a,b) => {
+    let av = a[SORT_COL], bv = b[SORT_COL];
+    if (SORT_COL === "amount") { av = av||0; bv = bv||0; }
+    if (av < bv) return SORT_DIR === "asc" ? -1 : 1;
+    if (av > bv) return SORT_DIR === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  PAGE = 1;
+  document.getElementById("result-count").textContent =
+    `${FILTERED.length} result${FILTERED.length!==1?"s":""}`;
+  renderTable();
+  renderPager();
+}
+
+// ── TABLE RENDER ─────────────────────────────────────────────────────────────
+function renderTable() {
+  const tbody = document.getElementById("tbody");
+  const empty = document.getElementById("empty-state");
+
+  if (!FILTERED.length) {
+    tbody.innerHTML = "";
+    empty.style.display = "";
+    document.getElementById("pager").style.display = "none";
+    return;
+  }
+  empty.style.display = "none";
+  document.getElementById("pager").style.display = "";
+
+  const start = (PAGE-1)*PAGE_SIZE;
+  const slice = FILTERED.slice(start, start+PAGE_SIZE);
+
+  tbody.innerHTML = slice.map((r,i) => `
+    <tr style="animation-delay:${Math.min(i*15,300)}ms" onclick="openDrawer(${ALL_RECORDS.indexOf(r)})">
+      <td>${scoreHTML(r.score)}</td>
+      <td class="mono">${r.filed||"—"}</td>
+      <td>${chipHTML(r)}</td>
+      <td>
+        <div style="font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.owner||"—"}</div>
+        ${r.grantee?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${r.grantee}</div>`:""}
+      </td>
+      <td style="max-width:220px">
+        <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fmtAddr(r)}</div>
+      </td>
+      <td class="mono">${fmt$$(r.amount)}</td>
+      <td>${flagsHTML(r.flags)}</td>
+      <td>
+        <a href="${r.clerk_url||"#"}" target="_blank" onclick="event.stopPropagation()"
+           style="color:var(--blue);text-decoration:none;font-size:12px">View ↗</a>
+      </td>
+    </tr>
+  `).join("");
+}
+
+// ── PAGER ─────────────────────────────────────────────────────────────────────
+function renderPager() {
+  const total = FILTERED.length;
+  const pages = Math.ceil(total / PAGE_SIZE);
+  const info  = document.getElementById("pager-info");
+  const btns  = document.getElementById("pager-btns");
+  if (!total) return;
+
+  const start = (PAGE-1)*PAGE_SIZE+1;
+  const end   = Math.min(PAGE*PAGE_SIZE, total);
+  info.textContent = `${start}–${end} of ${total}`;
+
+  const range = [];
+  for (let p=Math.max(1,PAGE-2); p<=Math.min(pages,PAGE+2); p++) range.push(p);
+
+  btns.innerHTML = `
+    <button class="pager-btn" ${PAGE===1?"disabled":""} onclick="goPage(${PAGE-1})">‹</button>
+    ${range.map(p=>`<button class="pager-btn ${p===PAGE?"active":""}" onclick="goPage(${p})">${p}</button>`).join("")}
+    <button class="pager-btn" ${PAGE===pages?"disabled":""} onclick="goPage(${PAGE+1})">›</button>
+  `;
+}
+function goPage(p) { PAGE = p; renderTable(); renderPager(); window.scrollTo(0,200); }
+
+// ── SORT HEADERS ──────────────────────────────────────────────────────────────
+document.querySelectorAll("thead th[data-col]").forEach(th => {
+  th.addEventListener("click", () => {
+    const col = th.dataset.col;
+    if (SORT_COL === col) {
+      SORT_DIR = SORT_DIR === "asc" ? "desc" : "asc";
+    } else {
+      SORT_COL = col;
+      SORT_DIR = col === "score" ? "desc" : "asc";
+    }
+    document.querySelectorAll("thead th").forEach(h => {
+      h.classList.remove("sort-asc","sort-desc");
+    });
+    th.classList.add(`sort-${SORT_DIR}`);
+    applyFilters();
+  });
+});
+// set initial sort indicator
+document.querySelector('th[data-col="score"]').classList.add("sort-desc");
+
+// ── FILTER EVENTS ─────────────────────────────────────────────────────────────
+["search","filter-cat","filter-score","filter-addr"].forEach(id => {
+  document.getElementById(id).addEventListener("input", applyFilters);
+  document.getElementById(id).addEventListener("change", applyFilters);
+});
+
+// ── DRAWER ────────────────────────────────────────────────────────────────────
+function openDrawer(idx) {
+  const r = ALL_RECORDS[idx];
+  if (!r) return;
+
+  document.getElementById("drawer-chip").innerHTML = chipHTML(r);
+  document.getElementById("drawer-title").textContent = r.owner || r.doc_num || "Record";
+  document.getElementById("drawer-link").href = r.clerk_url || "#";
+
+  const fields = [
+    ["Document #",    `<span class="mono">${r.doc_num||"—"}</span>`],
+    ["Document Type", `${chipHTML(r)} ${r.cat_label||""}`],
+    ["Filed Date",    r.filed||"—"],
+    ["Owner / Grantor", r.owner||"—"],
+    ["Grantee",       r.grantee||"—"],
+    ["Amount",        fmt$$(r.amount)],
+    ["Legal Desc.",   r.legal||"—"],
+    ["Property",      r.prop_address ? `${r.prop_address}, ${r.prop_city||""} ${r.prop_state||""} ${r.prop_zip||""}`.replace(/\s+/g," ") : "—"],
+    ["Mail Address",  r.mail_address ? `${r.mail_address}, ${r.mail_city||""} ${r.mail_state||""} ${r.mail_zip||""}`.replace(/\s+/g," ") : "—"],
+    ["Seller Score",  scoreHTML(r.score)],
+    ["Flags",         flagsHTML(r.flags)],
+    ["Clerk URL",     r.clerk_url ? `<a href="${r.clerk_url}" target="_blank">${r.clerk_url}</a>` : "—"],
+  ];
+
+  document.getElementById("drawer-body").innerHTML = fields.map(([k,v]) =>
+    `<div class="detail-row"><div class="detail-key">${k}</div><div class="detail-val">${v}</div></div>`
+  ).join("");
+
+  document.getElementById("overlay").classList.add("open");
+  document.getElementById("drawer").classList.add("open");
+}
+function closeDrawer() {
+  document.getElementById("overlay").classList.remove("open");
+  document.getElementById("drawer").classList.remove("open");
+}
+document.addEventListener("keydown", e => { if (e.key==="Escape") closeDrawer(); });
+
+// ── CSV EXPORT ────────────────────────────────────────────────────────────────
+document.getElementById("export-btn").addEventListener("click", () => {
+  const cols = [
+    "First Name","Last Name","Mailing Address","Mailing City","Mailing State","Mailing Zip",
+    "Property Address","Property City","Property State","Property Zip",
+    "Lead Type","Document Type","Date Filed","Document Number","Amount/Debt Owed",
+    "Seller Score","Motivated Seller Flags","Source","Public Records URL"
+  ];
+  const rows = [cols];
+  (FILTERED.length ? FILTERED : ALL_RECORDS).forEach(r => {
+    const parts = (r.owner||"").replace(","," ").split(/\s+/);
+    rows.push([
+      parts.length>1 ? parts[parts.length-1] : "",
+      parts[0]||r.owner||"",
+      r.mail_address||"", r.mail_city||"", r.mail_state||"", r.mail_zip||"",
+      r.prop_address||"", r.prop_city||"", r.prop_state||"", r.prop_zip||"",
+      r.cat_label||"", r.doc_type||"", r.filed||"", r.doc_num||"",
+      r.amount||"", r.score||"",
+      (r.flags||[]).join("; "),
+      "Bernalillo County Clerk",
+      r.clerk_url||""
+    ]);
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v||"").replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], {type:"text/csv"});
+  const a    = document.createElement("a");
+  a.href     = URL.createObjectURL(blob);
+  a.download = `bcnm_leads_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+});
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
