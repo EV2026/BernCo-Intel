@@ -410,7 +410,7 @@ async def clerk_search_type(
 
         # ── Navigate ─────────────────────────────────────────────────────
         await async_retry(
-            lambda: page.goto(CLERK_SEARCH, wait_until="networkidle", timeout=45_000)
+            lambda: page.goto(CLERK_SEARCH, wait_until="networkidle", timeout=20_000)
         )
 
         if is_first:
@@ -431,7 +431,7 @@ async def clerk_search_type(
         form_found = False
         for sel in form_selectors:
             try:
-                await page.wait_for_selector(sel, timeout=8_000)
+                await page.wait_for_selector(sel, timeout=5_000)
                 form_found = True
                 log.info("  Form found via: %s", sel)
                 break
