@@ -1,1 +1,8 @@
-{"fetched_at":null,"source":"Bernalillo County Clerk / Assessor","date_range":null,"total":0,"with_address":0,"records":[]}
+{
+  "fetched_at": "2026-04-09T16:57:53.065253+00:00",
+  "source": "Bernalillo County Clerk / Assessor",
+  "date_range": "2026-04-02 to 2026-04-09",
+  "total": 0,
+  "with_address": 0,
+  "records": []
+}
