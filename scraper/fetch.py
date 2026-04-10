@@ -349,20 +349,81 @@ def lookup_owner(name: str, index: dict[str, dict]) -> dict:
 
 async def handle_disclaimer(page: Page) -> None:
     """Click through any disclaimer / terms page before the search form."""
+    # Only act if we're actually on the disclaimer page
+    if "disclaimer" not in page.url.lower():
+        return
+
+    log.info("  On disclaimer page — attempting to click through…")
+
+    # Log ALL buttons and inputs so we know what's there
+    try:
+        all_btns = await page.evaluate("""
+            () => {
+                const els = [...document.querySelectorAll('input[type=submit], input[type=button], button, a')];
+                return els.map(e => ({tag: e.tagName, type: e.type||'', value: e.value||'', text: e.innerText||'', id: e.id||'', name: e.name||''}));
+            }
+        """)
+        log.info("  Disclaimer page elements: %s", all_btns[:15])
+    except Exception as e:
+        log.warning("  Could not enumerate elements: %s", e)
+
+    # Strategy 1: click any input[type=submit] or input[type=button]
+    for sel in ["input[type='submit']", "input[type='button']", "button[type='submit']"]:
+        try:
+            el = page.locator(sel).first
+            if await el.count() > 0:
+                val = await el.get_attribute("value") or ""
+                txt = await el.inner_text() or ""
+                log.info("  Clicking submit element: sel=%s val=%r txt=%r", sel, val, txt)
+                await el.click()
+                await page.wait_for_load_state("networkidle", timeout=15_000)
+                if "disclaimer" not in page.url.lower():
+                    log.info("  Disclaimer cleared via %s", sel)
+                    return
+        except Exception as exc:
+            log.warning("  Submit click failed (%s): %s", sel, exc)
+
+    # Strategy 2: click any button/link containing common accept words
     disclaimer_texts = [
         "Accept", "I Agree", "I Accept", "Agree", "Continue",
-        "OK", "Yes", "Proceed", "Enter", "I understand",
+        "OK", "Yes", "Proceed", "Enter", "I understand", "Submit",
     ]
     for txt in disclaimer_texts:
-        try:
-            btn = page.get_by_role("button", name=re.compile(txt, re.I))
-            if await btn.count() > 0:
-                log.info("  Clicking disclaimer button: '%s'", txt)
-                await btn.click()
-                await page.wait_for_load_state("networkidle", timeout=15_000)
-                return
-        except Exception:
-            pass
+        for role in ("button", "link"):
+            try:
+                el = page.get_by_role(role, name=re.compile(txt, re.I)).first
+                if await el.count() > 0:
+                    log.info("  Clicking %s: %r", role, txt)
+                    await el.click()
+                    await page.wait_for_load_state("networkidle", timeout=15_000)
+                    if "disclaimer" not in page.url.lower():
+                        log.info("  Disclaimer cleared via %r", txt)
+                        return
+            except Exception:
+                pass
+
+    # Strategy 3: submit the form directly via JavaScript
+    try:
+        log.info("  Trying JS form submit…")
+        await page.evaluate("document.forms[0] && document.forms[0].submit()")
+        await page.wait_for_load_state("networkidle", timeout=15_000)
+        if "disclaimer" not in page.url.lower():
+            log.info("  Disclaimer cleared via JS form submit")
+            return
+    except Exception as exc:
+        log.warning("  JS form submit failed: %s", exc)
+
+    # Strategy 4: navigate directly to the search URL (bypass disclaimer)
+    try:
+        log.info("  Trying direct navigation to search page…")
+        await page.goto(CLERK_SEARCH, wait_until="networkidle", timeout=20_000)
+        if "disclaimer" not in page.url.lower():
+            log.info("  Disclaimer bypassed via direct navigation")
+            return
+    except Exception as exc:
+        log.warning("  Direct navigation failed: %s", exc)
+
+    log.warning("  Could not clear disclaimer page — URL still: %s", page.url)
     for txt in disclaimer_texts:
         try:
             link = page.get_by_role("link", name=re.compile(txt, re.I))
