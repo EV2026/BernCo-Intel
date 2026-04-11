@@ -370,92 +370,106 @@ async def fill_date_field(page: Page, label_hint: str, value: str) -> bool:
 
 async def _parse_html_results(page: Page) -> list[dict]:
     """
-    Extract document rows using JavaScript to read the live DOM directly.
-    Logs all list items and table rows so we can see the exact page structure.
+    Parse results using the confirmed ss-search-row class structure.
+
+    Each result row is a <li class="ss-search-row"> with text:
+      {letter}\n{doc_num} \xa0•\xa0 {date} {time} \xa0•\xa0 {doc_type}\nGrantor...\n{owner}
+    and href pointing to the document detail page.
     """
     rows_out: list[dict] = []
     KIOSK_BASE = "https://bernalillocountynm-kiosk.tylerhost.net"
 
     try:
-        # Dump EVERY li and tr from the page via JS
-        dom_items = await page.evaluate("""
-            () => [...document.querySelectorAll('li, tr, div[data-doc-id], div[data-id]')]
-                .map(el => ({
-                    tag:  el.tagName,
-                    cls:  (el.className || '').substring(0, 60),
-                    role: el.getAttribute('data-role') || '',
-                    id:   el.id || '',
-                    text: (el.innerText || el.textContent || '').trim().substring(0, 300),
-                    href: (el.querySelector('a[href]') || {}).href || ''
-                }))
-                .filter(x => x.text.length > 3)
+        # Target ONLY ss-search-row elements — confirmed class from DOM snapshot
+        results = await page.evaluate("""
+            () => [...document.querySelectorAll('li.ss-search-row')]
+                .map(el => {
+                    // Get all child li text for owner names
+                    const childLis = [...el.querySelectorAll('li')];
+                    const names = childLis.map(li => (li.innerText||'').trim()).filter(Boolean);
+
+                    // Get the main row link
+                    const link = el.querySelector('a[href]');
+                    return {
+                        text: (el.innerText || el.textContent || '').trim(),
+                        href: link ? link.href : '',
+                        names: names
+                    };
+                })
         """)
 
-        # Log first 30 items so we can see the DOM structure
-        log.info("  DOM snapshot — %d items total, showing first 30:", len(dom_items))
-        for item in dom_items[:30]:
-            log.info("    [%s cls=%-30s role=%-15s] text=%-80s href=%s",
-                     item["tag"], item["cls"], item["role"],
-                     repr(item["text"][:80]), item["href"][-60:] if item["href"] else "")
+        log.info("  ss-search-row elements found: %d", len(results))
 
-        # ── Try to identify actual document result rows ──────────────────
-        # Tyler doc numbers look like: 2026-012345 or 202601234
-        doc_num_re = re.compile(r"(20\d{2}[\-]?\d{4,8})")
-        date_re    = re.compile(r"(\d{1,2}/\d{1,2}/\d{4})")
-        type_re    = re.compile(
-            r"(LP|NOFC|TAXDEED|JUD|CCJ|DRJUD|LNCORPTX|LNIRS|LNFED|"
-            r"LNMECH|LNHOA|MEDLN|PRO|NOC|RELLP|LN|"
-            r"LIS PENDENS|FORECLOSURE|JUDGMENT|LIEN|PROBATE|DEED)",
-            re.I
-        )
+        # Log first 3 items so we can verify parsing
+        for item in results[:3]:
+            log.info("  ROW text=%s | href=%s",
+                     repr(item["text"][:120]), item["href"][-60:])
 
-        skip_texts = {
-            "search","clear selections","filter results","next","previous",
-            "prev","copyright","tyler","session","home","cart",
-        }
+        # Parse each result row
+        sep = "\xa0\u2022\xa0"  # •  separator Tyler uses
 
-        for item in dom_items:
+        for item in results:
             text = item["text"]
-            tl   = text.lower().strip()
-
-            # Skip obvious non-result elements
-            if tl in skip_texts or len(tl) < 5:
-                continue
-            if any(tl.startswith(s) for s in skip_texts):
-                continue
-            # Skip pure number+newline items (these are the filter count buttons)
-            if re.match(r"^[a-z ]+\n?\d+$", tl):
-                continue
-
-            doc_m  = doc_num_re.search(text)
-            date_m = date_re.search(text)
-            type_m = type_re.search(text)
-
-            if not doc_m and not date_m:
-                continue
-
             href = item["href"]
+            if not text:
+                continue
+
+            # Split on the bullet separator (\xa0•\xa0)
+            # Text looks like: "M\n2026028527 \xa0•\xa0 04/09/2026 04:53 PM \xa0•\xa0 Mortgage\nGrantor..."
+            parts = re.split(r"\s*\xa0\u2022\xa0\s*|\s*\u00a0•\u00a0\s*|\xa0•\xa0", text)
+
+            # Fallback: split on bullet character directly
+            if len(parts) < 3:
+                parts = re.split(r"\s*•\s*", text)
+
+            # Extract doc number from first part (after stripping leading letter+newline)
+            first = parts[0] if parts else text
+            doc_m = re.search(r"(\d{7,})", first)
+            doc_num = doc_m.group(1) if doc_m else ""
+
+            # Extract date from second part
+            date_part = parts[1] if len(parts) > 1 else ""
+            date_m = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", date_part)
+            filed = normalise_date(date_m.group(1)) if date_m else ""
+
+            # Extract doc type from third part (before any newline)
+            type_raw = parts[2].split("\n")[0].strip() if len(parts) > 2 else ""
+
+            # Extract owner: look in text after "Grantor" label
+            owner = ""
+            grantor_m = re.search(
+                r"Grantor(?:\s*\(\d+\))?\s*\n([^\n]+)", text
+            )
+            if grantor_m:
+                owner = grantor_m.group(1).strip()
+            elif item.get("names"):
+                owner = item["names"][0]
+
+            # Extract legal from text after "Legal Summary"
+            legal_m = re.search(r"Legal Summary(?:\s*\(\d+\))?\s*\n([^\n]+)", text)
+            legal = legal_m.group(1).strip() if legal_m else ""
+
+            if not doc_num and not filed:
+                continue
+
             if href and not href.startswith("http"):
                 href = KIOSK_BASE + ("" if href.startswith("/") else "/kiosk/") + href.lstrip("/")
 
             rows_out.append({
-                "doc_num":   doc_m.group(1)  if doc_m  else "",
-                "doc_type":  guess_doc_type(type_m.group(1)) if type_m else "",
-                "filed":     normalise_date(date_m.group(1)) if date_m else "",
-                "owner":     "",
+                "doc_num":   doc_num,
+                "doc_type":  guess_doc_type(type_raw),
+                "filed":     filed,
+                "owner":     owner,
                 "grantee":   "",
                 "amount":    None,
-                "legal":     text[:200],
+                "legal":     legal,
                 "clerk_url": href or page.url,
             })
 
-        if rows_out:
-            log.info("  Extracted %d candidate rows from DOM", len(rows_out))
-        else:
-            log.info("  No document rows matched — see DOM snapshot above for structure")
+        log.info("  Parsed %d rows from ss-search-row elements", len(rows_out))
 
     except Exception as exc:
-        log.warning("  JS DOM extraction failed: %s", exc)
+        log.warning("  ss-search-row parse failed: %s\n%s", exc, traceback.format_exc())
 
     return rows_out
 
@@ -839,10 +853,6 @@ def build_records(
                 continue
             seen.add(key)
 
-            # Skip doc types we don't care about
-            if doc_type not in DOC_TYPE_MAP:
-                continue
-
             # Date filter
             if filed:
                 try:
@@ -852,7 +862,38 @@ def build_records(
                 except ValueError:
                     pass
 
-            cat, cat_label = DOC_TYPE_MAP[doc_type]
+            # Map doc type — Tyler uses full names like "Lis Pendens", "Lien", "Judgment"
+            if doc_type in DOC_TYPE_MAP:
+                cat, cat_label = DOC_TYPE_MAP[doc_type]
+            else:
+                tl = doc_type.lower()
+                if "lis pendens" in tl:
+                    cat, cat_label, doc_type = "foreclosure", "Lis Pendens", "LP"
+                elif "foreclosure" in tl:
+                    cat, cat_label, doc_type = "foreclosure", "Notice of Foreclosure", "NOFC"
+                elif "tax deed" in tl:
+                    cat, cat_label, doc_type = "tax", "Tax Deed", "TAXDEED"
+                elif "judgment" in tl or "judgement" in tl:
+                    cat, cat_label, doc_type = "judgment", "Judgment", "JUD"
+                elif "mechanic" in tl:
+                    cat, cat_label, doc_type = "lien", "Mechanic Lien", "LNMECH"
+                elif "hoa" in tl or "homeowner" in tl:
+                    cat, cat_label, doc_type = "lien", "HOA Lien", "LNHOA"
+                elif "irs" in tl:
+                    cat, cat_label, doc_type = "lien", "IRS Lien", "LNIRS"
+                elif "federal" in tl and "lien" in tl:
+                    cat, cat_label, doc_type = "lien", "Federal Lien", "LNFED"
+                elif "corp" in tl and "tax" in tl:
+                    cat, cat_label, doc_type = "lien", "Corp Tax Lien", "LNCORPTX"
+                elif "lien" in tl:
+                    cat, cat_label, doc_type = "lien", "Lien", "LN"
+                elif "probate" in tl:
+                    cat, cat_label, doc_type = "probate", "Probate", "PRO"
+                elif "commencement" in tl:
+                    cat, cat_label, doc_type = "other", "Notice of Commencement", "NOC"
+                else:
+                    # Skip document types we don't care about
+                    continue
 
             # ── Address from ArcGIS parcel service ────────────────────────
             addr: dict = {}
