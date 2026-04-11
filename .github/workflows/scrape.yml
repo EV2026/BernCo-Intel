@@ -2,7 +2,7 @@ name: Daily Motivated Seller Scrape
 
 on:
   schedule:
-    - cron: "0 7 * * *"
+    - cron: "0 14 * * *"   # 7am MT (UTC-7)
   workflow_dispatch:
 
 permissions:
@@ -18,7 +18,7 @@ jobs:
   scrape-and-deploy:
     name: Scrape, Commit & Deploy
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -35,7 +35,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Python dependencies
-        run: pip install requests beautifulsoup4 lxml playwright
+        run: pip install requests beautifulsoup4 lxml playwright sendgrid
 
       - name: Install Playwright browsers
         run: python -m playwright install --with-deps chromium
@@ -59,6 +59,14 @@ jobs:
           else:
               print("No records.json found")
           EOF
+
+      - name: Send email alert
+        env:
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          ALERT_EMAIL:      ${{ secrets.ALERT_EMAIL }}
+          FROM_EMAIL:       "alerts@envisionventuresllc.com"
+          HOT_THRESHOLD:    "50"
+        run: python scraper/alert.py
 
       - name: Commit updated records
         run: |
