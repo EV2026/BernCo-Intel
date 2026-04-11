@@ -64,7 +64,7 @@ jobs:
         env:
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           ALERT_EMAIL:      ${{ secrets.ALERT_EMAIL }}
-          FROM_EMAIL:       "alerts@envisionventuresllc.com"
+          FROM_EMAIL:       "JonathanG@envisionventuresllc.com"
           HOT_THRESHOLD:    "50"
         run: python scraper/alert.py
 
