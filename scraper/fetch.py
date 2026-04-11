@@ -472,31 +472,9 @@ async def _parse_html_results(page: Page) -> list[dict]:
     if rows_out:
         return rows_out
 
-    # ── Strategy 3: any <div> or <li> containing instrument number pattern ─
-    for tag in soup.find_all(["div", "li", "tr", "p"]):
-        text = tag.get_text(" ", strip=True)
-        # Must look like a record (has an instrument/doc number)
-        doc_m = re.search(
-            r"(20\d{2}-\d{4,}|[A-Z]{0,4}\d{6,})", text
-        )
-        date_m = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
-        if not doc_m or not date_m:
-            continue
-        # Skip navigation / header elements
-        if any(skip in text.lower() for skip in
-               ("search", "copyright", "tyler", "session", "next", "prev", "page")):
-            continue
-        link = tag.find("a", href=True)
-        rows_out.append({
-            "doc_num":   doc_m.group(1),
-            "doc_type":  "",
-            "filed":     normalise_date(date_m.group(1)),
-            "owner":     "",
-            "grantee":   "",
-            "amount":    None,
-            "legal":     "",
-            "clerk_url": make_url(link["href"] if link else ""),
-        })
+    # ── Strategy 3: log raw HTML so we can see results structure ─────────
+    log.info("  No rows found by table/listview parsers")
+    log.info("  HTML sample (first 4000 chars):\n%s", html[:4000])
 
     return rows_out
 
