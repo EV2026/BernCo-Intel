@@ -934,40 +934,33 @@ def build_records(
 # ═══════════════════════════════════════════════════════════════════════════
 
 def export_ghl_csv(records: list[dict], path: Path) -> None:
+    """
+    Export skip-trace-ready CSV — name + address columns only (A-J).
+    Columns K-S (lead type, doc type, score, etc.) are intentionally
+    excluded so the file drops cleanly into BatchSkipTracing or similar.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     cols = [
-        "First Name","Last Name",
-        "Mailing Address","Mailing City","Mailing State","Mailing Zip",
-        "Property Address","Property City","Property State","Property Zip",
-        "Lead Type","Document Type","Date Filed","Document Number",
-        "Amount/Debt Owed","Seller Score","Motivated Seller Flags",
-        "Source","Public Records URL",
+        "First Name", "Last Name",
+        "Mailing Address", "Mailing City", "Mailing State", "Mailing Zip",
+        "Property Address", "Property City", "Property State", "Property Zip",
     ]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)
         w.writeheader()
         for r in records:
-            parts = r.get("owner","").replace(","," ").split()
+            parts = r.get("owner", "").replace(",", " ").split()
             w.writerow({
-                "First Name":             parts[-1] if len(parts) > 1 else "",
-                "Last Name":              parts[0]  if parts else "",
-                "Mailing Address":        r.get("mail_address",""),
-                "Mailing City":           r.get("mail_city",   ""),
-                "Mailing State":          r.get("mail_state",  ""),
-                "Mailing Zip":            r.get("mail_zip",    ""),
-                "Property Address":       r.get("prop_address",""),
-                "Property City":          r.get("prop_city",   ""),
-                "Property State":         r.get("prop_state",  ""),
-                "Property Zip":           r.get("prop_zip",    ""),
-                "Lead Type":              r.get("cat_label",   ""),
-                "Document Type":          r.get("doc_type",    ""),
-                "Date Filed":             r.get("filed",       ""),
-                "Document Number":        r.get("doc_num",     ""),
-                "Amount/Debt Owed":       r.get("amount",      ""),
-                "Seller Score":           r.get("score",       ""),
-                "Motivated Seller Flags": "; ".join(r.get("flags",[])),
-                "Source":                 "Bernalillo County Clerk",
-                "Public Records URL":     r.get("clerk_url",   ""),
+                "First Name":      parts[-1] if len(parts) > 1 else "",
+                "Last Name":       parts[0]  if parts else "",
+                "Mailing Address": r.get("mail_address", ""),
+                "Mailing City":    r.get("mail_city",    ""),
+                "Mailing State":   r.get("mail_state",   ""),
+                "Mailing Zip":     r.get("mail_zip",     ""),
+                "Property Address":r.get("prop_address", ""),
+                "Property City":   r.get("prop_city",    ""),
+                "Property State":  r.get("prop_state",   ""),
+                "Property Zip":    r.get("prop_zip",     ""),
             })
     log.info("GHL CSV → %s (%d rows)", path, len(records))
 
