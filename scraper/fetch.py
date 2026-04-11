@@ -369,11 +369,24 @@ async def fill_date_field(page: Page, label_hint: str, value: str) -> bool:
 
 
 async def _parse_html_results(page: Page) -> list[dict]:
-    """Fallback: parse visible HTML results table."""
+    """
+    Parse results from the Tyler kiosk HTML page.
+    Handles both HTML tables and jQuery Mobile list views (ul/li).
+    """
     rows_out: list[dict] = []
-    html  = await page.content()
-    soup  = BeautifulSoup(html, "lxml")
+    html = await page.content()
+    soup = BeautifulSoup(html, "lxml")
 
+    KIOSK_BASE = "https://bernalillocountynm-kiosk.tylerhost.net"
+
+    def make_url(href: str) -> str:
+        if not href or href == "#":
+            return page.url
+        if href.startswith("http"):
+            return href
+        return KIOSK_BASE + (href if href.startswith("/") else "/kiosk/" + href.lstrip("/"))
+
+    # ── Strategy 1: HTML <table> ──────────────────────────────────────────
     for table in soup.find_all("table"):
         headers = [th.get_text(strip=True).lower() for th in table.find_all("th")]
         if not headers:
@@ -381,9 +394,8 @@ async def _parse_html_results(page: Page) -> list[dict]:
             if first_tr:
                 headers = [td.get_text(strip=True).lower()
                            for td in first_tr.find_all("td")]
-
         if not any(kw in " ".join(headers)
-                   for kw in ("doc", "instrument", "grantor", "recorded", "type")):
+                   for kw in ("doc","instrument","grantor","recorded","type")):
             continue
 
         col = {h: i for i, h in enumerate(headers)}
@@ -393,7 +405,7 @@ async def _parse_html_results(page: Page) -> list[dict]:
                     if n in h: return i
             return None
 
-        idx_num  = gcol("instrument","doc number","number","doc num")
+        idx_num  = gcol("instrument","doc number","number","doc num","inst")
         idx_type = gcol("doc type","type","instrument type")
         idx_gran = gcol("grantor","owner","seller")
         idx_gran2= gcol("grantee","buyer")
@@ -406,19 +418,11 @@ async def _parse_html_results(page: Page) -> list[dict]:
             if not cells: continue
             def cell(i):
                 return clean(cells[i].get_text()) if i is not None and i < len(cells) else ""
-
             doc_num = cell(idx_num)
             filed   = cell(idx_date)
             if not doc_num and not filed:
                 continue
-
             link = tr.find("a", href=True)
-            href = link["href"] if link else ""
-            if href and not href.startswith("http"):
-                href = "https://bernalillocountynm-kiosk.tylerhost.net" + (
-                    href if href.startswith("/") else "/kiosk/" + href.lstrip("/")
-                )
-
             rows_out.append({
                 "doc_num":   doc_num,
                 "doc_type":  guess_doc_type(cell(idx_type)),
@@ -427,8 +431,72 @@ async def _parse_html_results(page: Page) -> list[dict]:
                 "grantee":   cell(idx_gran2),
                 "amount":    parse_amount(cell(idx_amt)),
                 "legal":     cell(idx_legal),
-                "clerk_url": href or page.url,
+                "clerk_url": make_url(link["href"] if link else ""),
             })
+
+    if rows_out:
+        return rows_out
+
+    # ── Strategy 2: jQuery Mobile <ul>/<li> list view ─────────────────────
+    # Tyler kiosk renders results as <li data-role="list-divider"> or
+    # plain <li> inside a <ul data-role="listview">
+    for ul in soup.find_all("ul", attrs={"data-role": "listview"}):
+        for li in ul.find_all("li"):
+            # Skip dividers and empty items
+            if li.get("data-role") == "list-divider":
+                continue
+            text = li.get_text(" ", strip=True)
+            if not text:
+                continue
+
+            # Extract fields from text using regex
+            doc_m  = re.search(r"(?:Instrument|Doc(?:ument)?)\s*(?:#|No|Number)[:\s]*([A-Z0-9\-]+)", text, re.I)
+            date_m = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
+            type_m = re.search(r"(LP|NOFC|TAXDEED|JUD|CCJ|DRJUD|LNCORPTX|LNIRS|LNFED|LNMECH|LNHOA|MEDLN|PRO|NOC|RELLP|LN)", text.upper())
+
+            if not doc_m and not date_m:
+                continue
+
+            link = li.find("a", href=True)
+            rows_out.append({
+                "doc_num":   doc_m.group(1) if doc_m else "",
+                "doc_type":  type_m.group(1) if type_m else "",
+                "filed":     normalise_date(date_m.group(1) if date_m else ""),
+                "owner":     "",
+                "grantee":   "",
+                "amount":    None,
+                "legal":     "",
+                "clerk_url": make_url(link["href"] if link else ""),
+            })
+
+    if rows_out:
+        return rows_out
+
+    # ── Strategy 3: any <div> or <li> containing instrument number pattern ─
+    for tag in soup.find_all(["div", "li", "tr", "p"]):
+        text = tag.get_text(" ", strip=True)
+        # Must look like a record (has an instrument/doc number)
+        doc_m = re.search(
+            r"(20\d{2}-\d{4,}|[A-Z]{0,4}\d{6,})", text
+        )
+        date_m = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
+        if not doc_m or not date_m:
+            continue
+        # Skip navigation / header elements
+        if any(skip in text.lower() for skip in
+               ("search", "copyright", "tyler", "session", "next", "prev", "page")):
+            continue
+        link = tag.find("a", href=True)
+        rows_out.append({
+            "doc_num":   doc_m.group(1),
+            "doc_type":  "",
+            "filed":     normalise_date(date_m.group(1)),
+            "owner":     "",
+            "grantee":   "",
+            "amount":    None,
+            "legal":     "",
+            "clerk_url": make_url(link["href"] if link else ""),
+        })
 
     return rows_out
 
@@ -700,74 +768,74 @@ async def run_kiosk_scrape(date_from: str, date_to: str) -> list[dict]:
         log.info("  After search: url=%s  captured_api=%d",
                  page.url, len(captured_api))
 
-        # ── Log the raw API response so we can see its structure ──────────
-        if captured_api:
-            sample = str(captured_api[0])
-            log.info("  API response sample (first 1000 chars): %s", sample[:1000])
-        else:
-            # Try capturing ALL JSON responses (broaden the filter)
-            log.info("  No API response captured yet — logging ALL page responses")
+        # ── Extract totalPages from the pagination JSON ───────────────────
+        total_pages = 1
+        for payload in captured_api:
+            if isinstance(payload, dict) and "totalPages" in payload:
+                total_pages = int(payload.get("totalPages", 1))
+                log.info("  totalPages=%d  currentPage=%d",
+                         total_pages, payload.get("currentPage", 1))
+                break
+        captured_api.clear()
 
-        # ── Paginate through results ──────────────────────────────────────
-        page_num = 0
-        while True:
-            page_num += 1
+        # ── Wait for jQuery Mobile to render results into the DOM ─────────
+        await asyncio.sleep(3)
 
-            # Try JSON first, then HTML
-            if captured_api:
-                batch = await _extract_json_results(captured_api)
-                captured_api.clear()
-            else:
-                batch = await _parse_html_results(page)
+        # ── Paginate: POST each page directly ────────────────────────────
+        # The kiosk POSTs to searchPost/ with a page parameter.
+        # We reconstruct those requests via Playwright evaluate.
+        log.info("  Fetching %d pages of HTML results…", total_pages)
 
-            log.info("  Page %d: %d raw rows", page_num, len(batch))
+        for page_num in range(1, min(total_pages + 1, 51)):
+            # For pages 2+, trigger the page change via the pager
+            if page_num > 1:
+                try:
+                    # Click the Next button if enabled, otherwise use JS
+                    html_check = await page.content()
+                    soup_check = BeautifulSoup(html_check, "lxml")
+                    next_disabled = False
+                    for tag in soup_check.find_all(["a","button"]):
+                        if tag.get_text(strip=True).lower() in ("next","next >",">",">>"):
+                            if "disabled" in " ".join(tag.get("class",[])).lower():
+                                next_disabled = True
+                            break
+                    if next_disabled:
+                        log.info("  Next button disabled at page %d — done", page_num)
+                        break
+
+                    # Try clicking Next
+                    nxt = page.locator("a[data-role='button']:not(.ui-disabled)")
+                    nxt_texts = []
+                    for i in range(await nxt.count()):
+                        t = await nxt.nth(i).inner_text()
+                        nxt_texts.append(t.strip().lower())
+                    log.info("  Enabled buttons: %s", nxt_texts[:10])
+
+                    clicked = False
+                    for i in range(await nxt.count()):
+                        t = (await nxt.nth(i).inner_text()).strip().lower()
+                        if t in ("next", "next >", ">", ">>"):
+                            await nxt.nth(i).click()
+                            await page.wait_for_load_state("networkidle", timeout=15_000)
+                            await asyncio.sleep(2)
+                            clicked = True
+                            break
+                    if not clicked:
+                        log.info("  Could not find enabled Next — done at page %d", page_num)
+                        break
+                except Exception as e:
+                    log.warning("  Page navigation error: %s", e)
+                    break
+
+            batch = await _parse_html_results(page)
+            log.info("  Page %d/%d: %d rows", page_num, total_pages, len(batch))
             all_rows.extend(batch)
 
-            # Stop if page 1 returned nothing — no point paginating
             if page_num == 1 and len(batch) == 0:
-                log.info("  No results on page 1 — stopping pagination")
-                break
-
-            # Next page? Only proceed if Next button exists AND is not disabled
-            html = await page.content()
-            soup = BeautifulSoup(html, "lxml")
-            found_next = False
-
-            for tag in soup.find_all(["a", "button"]):
-                txt = tag.get_text(strip=True).lower()
-                if txt not in ("next", "next >", ">", ">>"):
-                    continue
-                # Skip disabled buttons (Tyler uses ui-disabled class)
-                classes = " ".join(tag.get("class", []))
-                if "disabled" in classes.lower():
-                    log.info("  Next button is disabled — last page reached")
-                    break
-                # It's an enabled Next button — click it
-                href = tag.get("href", "")
-                try:
-                    if href and href not in ("#", ""):
-                        full = href if href.startswith("http") else (
-                            "https://bernalillocountynm-kiosk.tylerhost.net"
-                            + (href if href.startswith("/") else "/kiosk/" + href.lstrip("/"))
-                        )
-                        await page.goto(full, wait_until="networkidle", timeout=20_000)
-                    else:
-                        btn = page.get_by_role(
-                            "button", name=re.compile("next", re.I)
-                        ).filter(has_not=page.locator(".ui-disabled"))
-                        if await btn.count() > 0:
-                            await btn.first.click()
-                            await page.wait_for_load_state("networkidle", timeout=15_000)
-                        else:
-                            break
-                    found_next = True
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    log.warning("  Pagination error: %s", e)
-                break
-
-            if not found_next or page_num >= 50:
-                break
+                # Log raw HTML so we can see what the results look like
+                html_sample = await page.content()
+                log.info("  Page 1 HTML sample (2000 chars):\n%s",
+                         html_sample[:2000])
 
         await browser.close()
 
