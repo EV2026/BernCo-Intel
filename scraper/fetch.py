@@ -529,16 +529,12 @@ async def run_kiosk_scrape(date_from: str, date_to: str) -> list[dict]:
         async def capture(response):
             url   = response.url.lower()
             ctype = response.headers.get("content-type", "")
-            # Capture any JSON response that looks like search results
-            if "json" in ctype and any(
-                kw in url for kw in
-                ("search","result","document","record","instrument","query","api")
-            ):
+            # Capture ALL JSON from the kiosk domain — we'll filter later
+            if "json" in ctype and "tylerhost.net" in url:
                 try:
                     data = await response.json()
                     captured_api.append(data)
-                    log.debug("  Captured API response: %s (%d chars)",
-                              response.url, len(str(data)))
+                    log.info("  Captured JSON from: %s", response.url[-80:])
                 except Exception:
                     pass
 
@@ -589,34 +585,45 @@ async def run_kiosk_scrape(date_from: str, date_to: str) -> list[dict]:
         except Exception:
             pass
 
-        # ── Fill Recording Date Start ─────────────────────────────────────
-        filled_from = await fill_date_field(page, "Recording Date Start", date_from)
-        if not filled_from:
-            filled_from = await fill_date_field(page, "Start", date_from)
-        if not filled_from:
-            # Last resort: fill the first visible text input
+        # ── Fill Recording Date Start & End ──────────────────────────────
+        # We know the exact field name attributes from the live page:
+        #   field_RecDateID_DOT_StartDate  and  field_RecDateID_DOT_EndDate
+        # Use fill() which sets value AND fires synthetic input/change events.
+        async def fill_known(field_name: str, value: str) -> bool:
+            sel = f"input[name='{field_name}']"
             try:
-                inputs = page.locator("input[type='text'], input[type='date']")
-                if await inputs.count() > 0:
-                    await inputs.first.type(date_from, delay=50)
+                loc = page.locator(sel).first
+                if await loc.count() > 0:
+                    await loc.click()
+                    await loc.fill(value)
+                    # Dispatch extra events so React/jQuery registers the change
+                    await page.evaluate(f"""
+                        () => {{
+                            const el = document.querySelector("{sel}");
+                            if (!el) return;
+                            el.value = "{value}";
+                            ['input','change','blur'].forEach(t =>
+                                el.dispatchEvent(new Event(t, {{bubbles:true}}))
+                            );
+                        }}
+                    """)
                     await page.keyboard.press("Tab")
-                    filled_from = True
-            except Exception:
-                pass
+                    val_after = await loc.input_value()
+                    log.info("    Filled %s = '%s' (confirmed: '%s')",
+                             field_name, value, val_after)
+                    return True
+            except Exception as exc:
+                log.warning("    fill_known failed for %s: %s", field_name, exc)
+            return False
 
-        # ── Fill Recording Date End ───────────────────────────────────────
-        filled_to = await fill_date_field(page, "Recording Date End", date_to)
+        filled_from = await fill_known("field_RecDateID_DOT_StartDate", date_from)
+        filled_to   = await fill_known("field_RecDateID_DOT_EndDate",   date_to)
+
+        # Fallback to label-based approach if exact names change
+        if not filled_from:
+            filled_from = await fill_date_field(page, "Recording Date Start", date_from)
         if not filled_to:
-            filled_to = await fill_date_field(page, "End", date_to)
-        if not filled_to:
-            try:
-                inputs = page.locator("input[type='text'], input[type='date']")
-                if await inputs.count() > 1:
-                    await inputs.nth(1).type(date_to, delay=50)
-                    await page.keyboard.press("Tab")
-                    filled_to = True
-            except Exception:
-                pass
+            filled_to = await fill_date_field(page, "Recording Date End", date_to)
 
         log.info("  Dates filled: from=%s to=%s", filled_from, filled_to)
 
@@ -661,6 +668,14 @@ async def run_kiosk_scrape(date_from: str, date_to: str) -> list[dict]:
         log.info("  After search: url=%s  captured_api=%d",
                  page.url, len(captured_api))
 
+        # ── Log the raw API response so we can see its structure ──────────
+        if captured_api:
+            sample = str(captured_api[0])
+            log.info("  API response sample (first 1000 chars): %s", sample[:1000])
+        else:
+            # Try capturing ALL JSON responses (broaden the filter)
+            log.info("  No API response captured yet — logging ALL page responses")
+
         # ── Paginate through results ──────────────────────────────────────
         page_num = 0
         while True:
@@ -676,32 +691,48 @@ async def run_kiosk_scrape(date_from: str, date_to: str) -> list[dict]:
             log.info("  Page %d: %d raw rows", page_num, len(batch))
             all_rows.extend(batch)
 
-            # Next page?
-            html  = await page.content()
-            soup  = BeautifulSoup(html, "lxml")
+            # Stop if page 1 returned nothing — no point paginating
+            if page_num == 1 and len(batch) == 0:
+                log.info("  No results on page 1 — stopping pagination")
+                break
+
+            # Next page? Only proceed if Next button exists AND is not disabled
+            html = await page.content()
+            soup = BeautifulSoup(html, "lxml")
             found_next = False
-            for tag in soup.find_all(["a","button"]):
+
+            for tag in soup.find_all(["a", "button"]):
                 txt = tag.get_text(strip=True).lower()
-                if txt in ("next","next >",">",">>"):
-                    href = tag.get("href","")
-                    try:
-                        if href and href != "#":
-                            full = href if href.startswith("http") else (
-                                "https://bernalillocountynm-kiosk.tylerhost.net"
-                                + (href if href.startswith("/") else "/kiosk/" + href.lstrip("/"))
-                            )
-                            await page.goto(full, wait_until="networkidle", timeout=20_000)
+                if txt not in ("next", "next >", ">", ">>"):
+                    continue
+                # Skip disabled buttons (Tyler uses ui-disabled class)
+                classes = " ".join(tag.get("class", []))
+                if "disabled" in classes.lower():
+                    log.info("  Next button is disabled — last page reached")
+                    break
+                # It's an enabled Next button — click it
+                href = tag.get("href", "")
+                try:
+                    if href and href not in ("#", ""):
+                        full = href if href.startswith("http") else (
+                            "https://bernalillocountynm-kiosk.tylerhost.net"
+                            + (href if href.startswith("/") else "/kiosk/" + href.lstrip("/"))
+                        )
+                        await page.goto(full, wait_until="networkidle", timeout=20_000)
+                    else:
+                        btn = page.get_by_role(
+                            "button", name=re.compile("next", re.I)
+                        ).filter(has_not=page.locator(".ui-disabled"))
+                        if await btn.count() > 0:
+                            await btn.first.click()
+                            await page.wait_for_load_state("networkidle", timeout=15_000)
                         else:
-                            btn = page.get_by_role("button", name=re.compile("next", re.I))
-                            if await btn.count() > 0:
-                                await btn.first.click()
-                                await page.wait_for_load_state("networkidle", timeout=15_000)
-                        found_next = True
-                        await asyncio.sleep(1)
-                        break
-                    except Exception as e:
-                        log.warning("  Pagination error: %s", e)
-                        break
+                            break
+                    found_next = True
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    log.warning("  Pagination error: %s", e)
+                break
 
             if not found_next or page_num >= 50:
                 break
