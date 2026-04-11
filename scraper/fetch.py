@@ -60,10 +60,8 @@ ARCGIS_PARCELS = (
 # Fields we want from the parcel layer
 ARCGIS_FIELDS = (
     "OWNER,UPC,"
-    "HSENUM,SUBNUM,ADDIR,STNAME,STTYPE,DIRECT,"   # site address components
-    "UNIT,UNITNO,CITY,ZIPCODE,"                    # site city/zip
-    "OWNHSENUM,OWNSUBNUM,OWNADDIR,OWNSTR,OWNSTRTYPE,OWNDIRECT,"  # mail addr
-    "OWNBOX,OWNUNIT,OWNUNITNO,OWNCITY,OWNSTATE,OWNZIPCODE"
+    "SITUSADD,SITUSCITY,SITUSSTATE,SITUSZIP,"   # pre-built site address
+    "OWNADD,OWNADD2,OWNCITY,OWNSTATE,OWNZIPCODE"  # pre-built mailing address
 )
 
 # ── Document type map ────────────────────────────────────────────────────────
@@ -241,48 +239,21 @@ def _arcgis_query(session: requests.Session, where: str) -> list[dict]:
 
 def _build_address(attrs: dict) -> dict:
     """
-    Assemble property address + mailing address from ArcGIS parcel attributes.
-    The ArcGIS layer stores address in components; we reconstruct full strings.
+    Build address dict from ArcGIS parcel attributes.
+    Uses pre-built combined address fields SITUSADD and OWNADD.
     """
     def f(key: str) -> str:
         return clean(attrs.get(key, "") or "")
 
-    # ── Site / property address ───────────────────────────────────────────
-    # Components: ADDIR HSENUM SUBNUM STNAME STTYPE DIRECT
-    site_parts = [
-        f("ADDIR"), f("HSENUM"), f("SUBNUM"),
-        f("STNAME"), f("STTYPE"), f("DIRECT"),
-    ]
-    prop_address = " ".join(p for p in site_parts if p)
-    if not prop_address:
-        # Some records have ADDRESS as a combined field
-        prop_address = f("ADDRESS") or f("SITEADDR") or f("SITE_ADDR")
-
-    prop_city = f("CITY") or "Albuquerque"
-    prop_zip  = f("ZIPCODE") or f("ZIP")
-
-    # ── Mailing address ──────────────────────────────────────────────────
-    mail_parts = [
-        f("OWNADDIR"), f("OWNHSENUM"), f("OWNSUBNUM"),
-        f("OWNSTR"), f("OWNSTRTYPE"), f("OWNDIRECT"),
-    ]
-    mail_address = " ".join(p for p in mail_parts if p)
-    if not mail_address:
-        mail_address = f("OWNBOX")      # PO Box fallback
-
-    mail_city  = f("OWNCITY")
-    mail_state = f("OWNSTATE") or "NM"
-    mail_zip   = f("OWNZIPCODE")
-
     return {
-        "prop_address": prop_address,
-        "prop_city":    prop_city,
-        "prop_state":   "NM",
-        "prop_zip":     prop_zip,
-        "mail_address": mail_address,
-        "mail_city":    mail_city,
-        "mail_state":   mail_state,
-        "mail_zip":     mail_zip,
+        "prop_address": f("SITUSADD"),
+        "prop_city":    f("SITUSCITY") or "Albuquerque",
+        "prop_state":   f("SITUSSTATE") or "NM",
+        "prop_zip":     f("SITUSZIP"),
+        "mail_address": f("OWNADD"),
+        "mail_city":    f("OWNCITY"),
+        "mail_state":   f("OWNSTATE") or "NM",
+        "mail_zip":     f("OWNZIPCODE"),
     }
 
 
@@ -302,18 +273,32 @@ def lookup_address(
     if key in cache:
         return cache[key]
 
-    for variant in name_variants(owner)[:4]:
-        # Escape single quotes in the name
-        safe = variant.replace("'", "''")
-        where = f"UPPER(OWNER) LIKE UPPER('{safe}%')"
+    # Build search variants — try last name first for best match rate
+    owner_clean = re.sub(r"[^\w\s]", " ", owner).strip()
+    words = owner_clean.upper().split()
+    last_name = words[0] if words else owner_clean.upper()
+
+    # Search strategies: last name only → full name → variants
+    search_terms = [last_name]
+    if len(words) > 1:
+        search_terms.append(" ".join(words[:2]))   # first two words
+    for v in name_variants(owner)[:2]:
+        if v.upper() not in search_terms:
+            search_terms.append(v.upper())
+
+    for term in search_terms[:4]:
+        safe = term.replace("'", "''")
+        # Use standard SQL LIKE without UPPER() — service is case-insensitive
+        where = f"OWNER LIKE '{safe}%'"
         features = _arcgis_query(session, where)
         if features:
             addr = _build_address(features[0])
-            log.info("    ArcGIS match for '%s': %s",
-                     owner, addr.get("prop_address", "(no addr)"))
-            cache[key] = addr
-            return addr
-        time.sleep(0.3)   # gentle rate limiting
+            if addr.get("prop_address") or addr.get("mail_address"):
+                log.info("    ArcGIS match for '%s' (term='%s'): %s",
+                         owner, term, addr.get("prop_address", addr.get("mail_address","(no addr)")))
+                cache[key] = addr
+                return addr
+        time.sleep(0.3)
 
     log.debug("    No ArcGIS match for '%s'", owner)
     cache[key] = {}
