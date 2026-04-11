@@ -370,111 +370,92 @@ async def fill_date_field(page: Page, label_hint: str, value: str) -> bool:
 
 async def _parse_html_results(page: Page) -> list[dict]:
     """
-    Parse results from the Tyler kiosk HTML page.
-    Handles both HTML tables and jQuery Mobile list views (ul/li).
+    Extract document rows using JavaScript to read the live DOM directly.
+    Logs all list items and table rows so we can see the exact page structure.
     """
     rows_out: list[dict] = []
-    html = await page.content()
-    soup = BeautifulSoup(html, "lxml")
-
     KIOSK_BASE = "https://bernalillocountynm-kiosk.tylerhost.net"
 
-    def make_url(href: str) -> str:
-        if not href or href == "#":
-            return page.url
-        if href.startswith("http"):
-            return href
-        return KIOSK_BASE + (href if href.startswith("/") else "/kiosk/" + href.lstrip("/"))
+    try:
+        # Dump EVERY li and tr from the page via JS
+        dom_items = await page.evaluate("""
+            () => [...document.querySelectorAll('li, tr, div[data-doc-id], div[data-id]')]
+                .map(el => ({
+                    tag:  el.tagName,
+                    cls:  (el.className || '').substring(0, 60),
+                    role: el.getAttribute('data-role') || '',
+                    id:   el.id || '',
+                    text: (el.innerText || el.textContent || '').trim().substring(0, 300),
+                    href: (el.querySelector('a[href]') || {}).href || ''
+                }))
+                .filter(x => x.text.length > 3)
+        """)
 
-    # ── Strategy 1: HTML <table> ──────────────────────────────────────────
-    for table in soup.find_all("table"):
-        headers = [th.get_text(strip=True).lower() for th in table.find_all("th")]
-        if not headers:
-            first_tr = table.find("tr")
-            if first_tr:
-                headers = [td.get_text(strip=True).lower()
-                           for td in first_tr.find_all("td")]
-        if not any(kw in " ".join(headers)
-                   for kw in ("doc","instrument","grantor","recorded","type")):
-            continue
+        # Log first 30 items so we can see the DOM structure
+        log.info("  DOM snapshot — %d items total, showing first 30:", len(dom_items))
+        for item in dom_items[:30]:
+            log.info("    [%s cls=%-30s role=%-15s] text=%-80s href=%s",
+                     item["tag"], item["cls"], item["role"],
+                     repr(item["text"][:80]), item["href"][-60:] if item["href"] else "")
 
-        col = {h: i for i, h in enumerate(headers)}
-        def gcol(*ns):
-            for n in ns:
-                for h, i in col.items():
-                    if n in h: return i
-            return None
+        # ── Try to identify actual document result rows ──────────────────
+        # Tyler doc numbers look like: 2026-012345 or 202601234
+        doc_num_re = re.compile(r"(20\d{2}[\-]?\d{4,8})")
+        date_re    = re.compile(r"(\d{1,2}/\d{1,2}/\d{4})")
+        type_re    = re.compile(
+            r"(LP|NOFC|TAXDEED|JUD|CCJ|DRJUD|LNCORPTX|LNIRS|LNFED|"
+            r"LNMECH|LNHOA|MEDLN|PRO|NOC|RELLP|LN|"
+            r"LIS PENDENS|FORECLOSURE|JUDGMENT|LIEN|PROBATE|DEED)",
+            re.I
+        )
 
-        idx_num  = gcol("instrument","doc number","number","doc num","inst")
-        idx_type = gcol("doc type","type","instrument type")
-        idx_gran = gcol("grantor","owner","seller")
-        idx_gran2= gcol("grantee","buyer")
-        idx_date = gcol("recorded","date","filed")
-        idx_legal= gcol("legal","description")
-        idx_amt  = gcol("amount","consideration")
+        skip_texts = {
+            "search","clear selections","filter results","next","previous",
+            "prev","copyright","tyler","session","home","cart",
+        }
 
-        for tr in table.find_all("tr")[1:]:
-            cells = tr.find_all("td")
-            if not cells: continue
-            def cell(i):
-                return clean(cells[i].get_text()) if i is not None and i < len(cells) else ""
-            doc_num = cell(idx_num)
-            filed   = cell(idx_date)
-            if not doc_num and not filed:
+        for item in dom_items:
+            text = item["text"]
+            tl   = text.lower().strip()
+
+            # Skip obvious non-result elements
+            if tl in skip_texts or len(tl) < 5:
                 continue
-            link = tr.find("a", href=True)
-            rows_out.append({
-                "doc_num":   doc_num,
-                "doc_type":  guess_doc_type(cell(idx_type)),
-                "filed":     normalise_date(filed),
-                "owner":     cell(idx_gran),
-                "grantee":   cell(idx_gran2),
-                "amount":    parse_amount(cell(idx_amt)),
-                "legal":     cell(idx_legal),
-                "clerk_url": make_url(link["href"] if link else ""),
-            })
-
-    if rows_out:
-        return rows_out
-
-    # ── Strategy 2: jQuery Mobile <ul>/<li> list view ─────────────────────
-    # Tyler kiosk renders results as <li data-role="list-divider"> or
-    # plain <li> inside a <ul data-role="listview">
-    for ul in soup.find_all("ul", attrs={"data-role": "listview"}):
-        for li in ul.find_all("li"):
-            # Skip dividers and empty items
-            if li.get("data-role") == "list-divider":
+            if any(tl.startswith(s) for s in skip_texts):
                 continue
-            text = li.get_text(" ", strip=True)
-            if not text:
+            # Skip pure number+newline items (these are the filter count buttons)
+            if re.match(r"^[a-z ]+\n?\d+$", tl):
                 continue
 
-            # Extract fields from text using regex
-            doc_m  = re.search(r"(?:Instrument|Doc(?:ument)?)\s*(?:#|No|Number)[:\s]*([A-Z0-9\-]+)", text, re.I)
-            date_m = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text)
-            type_m = re.search(r"(LP|NOFC|TAXDEED|JUD|CCJ|DRJUD|LNCORPTX|LNIRS|LNFED|LNMECH|LNHOA|MEDLN|PRO|NOC|RELLP|LN)", text.upper())
+            doc_m  = doc_num_re.search(text)
+            date_m = date_re.search(text)
+            type_m = type_re.search(text)
 
             if not doc_m and not date_m:
                 continue
 
-            link = li.find("a", href=True)
+            href = item["href"]
+            if href and not href.startswith("http"):
+                href = KIOSK_BASE + ("" if href.startswith("/") else "/kiosk/") + href.lstrip("/")
+
             rows_out.append({
-                "doc_num":   doc_m.group(1) if doc_m else "",
-                "doc_type":  type_m.group(1) if type_m else "",
-                "filed":     normalise_date(date_m.group(1) if date_m else ""),
+                "doc_num":   doc_m.group(1)  if doc_m  else "",
+                "doc_type":  guess_doc_type(type_m.group(1)) if type_m else "",
+                "filed":     normalise_date(date_m.group(1)) if date_m else "",
                 "owner":     "",
                 "grantee":   "",
                 "amount":    None,
-                "legal":     "",
-                "clerk_url": make_url(link["href"] if link else ""),
+                "legal":     text[:200],
+                "clerk_url": href or page.url,
             })
 
-    if rows_out:
-        return rows_out
+        if rows_out:
+            log.info("  Extracted %d candidate rows from DOM", len(rows_out))
+        else:
+            log.info("  No document rows matched — see DOM snapshot above for structure")
 
-    # ── Strategy 3: log raw HTML so we can see results structure ─────────
-    log.info("  No rows found by table/listview parsers")
-    log.info("  HTML sample (first 4000 chars):\n%s", html[:4000])
+    except Exception as exc:
+        log.warning("  JS DOM extraction failed: %s", exc)
 
     return rows_out
 
