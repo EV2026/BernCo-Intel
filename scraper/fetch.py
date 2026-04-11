@@ -433,22 +433,54 @@ async def _parse_html_results(page: Page) -> list[dict]:
     return rows_out
 
 
-async def _extract_json_results(api_data: list[dict]) -> list[dict]:
+async def _extract_json_results(api_data: list) -> list[dict]:
     """
     Convert intercepted API JSON responses to our row format.
-    Tyler kiosk returns results in various JSON shapes; we handle the common ones.
+    Handles non-dict payloads (e.g. session pings that return -1 or True).
+    Logs the full key structure of each payload so we can see the real shape.
     """
     rows: list[dict] = []
 
     for payload in api_data:
-        # Shape 1: {"results": [...]}
-        items = payload.get("results") or payload.get("documents") or []
-        # Shape 2: {"data": {"results": [...]}}
-        if not items and isinstance(payload.get("data"), dict):
-            items = payload["data"].get("results", [])
-        # Shape 3: flat list
-        if not items and isinstance(payload, list):
+        # Skip non-dict, non-list payloads (session pings return -1, True, etc.)
+        if not isinstance(payload, (dict, list)):
+            log.info("  Skipping scalar API payload: %s", repr(payload)[:80])
+            continue
+
+        # Log keys for dicts so we can see the real structure
+        if isinstance(payload, dict):
+            log.info("  API payload keys: %s  | sample: %s",
+                     list(payload.keys())[:20], str(payload)[:600])
+
+        # Locate the list of result items — try every known key shape
+        items = None
+        if isinstance(payload, dict):
+            for key in ("results", "documents", "rows", "records", "items",
+                        "hits", "searchResults", "Rows", "Records", "Documents",
+                        "data", "Results"):
+                val = payload.get(key)
+                if isinstance(val, list) and val:
+                    items = val
+                    log.info("  Found %d items under key '%s'", len(items), key)
+                    break
+                # "data" might itself be a dict containing a list
+                if isinstance(val, dict):
+                    for sub_key in ("results", "rows", "records", "documents", "items"):
+                        sub = val.get(sub_key)
+                        if isinstance(sub, list) and sub:
+                            items = sub
+                            log.info("  Found %d items under data.%s", len(items), sub_key)
+                            break
+                    if items:
+                        break
+        # Flat list at top level
+        if items is None and isinstance(payload, list) and payload:
             items = payload
+            log.info("  Payload is a flat list of %d items", len(items))
+
+        if not items:
+            log.info("  No result items found in this payload — skipping")
+            continue
 
         for item in items:
             if not isinstance(item, dict):
