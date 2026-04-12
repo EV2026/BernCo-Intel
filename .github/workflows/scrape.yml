@@ -68,6 +68,13 @@ jobs:
           HOT_THRESHOLD:    "50"
         run: python scraper/alert.py
 
+      - name: Push leads to GoHighLevel
+        env:
+          GHL_API_KEY:     ${{ secrets.GHL_API_KEY }}
+          GHL_LOCATION_ID: ${{ secrets.GHL_LOCATION_ID }}
+          HOT_THRESHOLD:   "50"
+        run: python scraper/ghl_push.py
+
       - name: Commit updated records
         run: |
           git config user.name  "github-actions[bot]"
