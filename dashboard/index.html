@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Bernalillo County — Motivated Seller Leads</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
 <style>
 /* ── TOKENS ──────────────────────────────────────────────────────────── */
@@ -328,12 +330,71 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
 }
 @keyframes spin { to { transform:rotate(360deg); } }
 
+/* ── MAP SECTION ─────────────────────────────────────────────────────── */
+.map-section {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.map-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; flex-wrap: wrap; gap: 8px;
+}
+.map-title {
+  font-family: var(--ff-head); font-size: 13px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+}
+.map-legend {
+  display: flex; gap: 12px; flex-wrap: wrap;
+}
+.legend-dot {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--muted);
+}
+.legend-dot span {
+  width: 10px; height: 10px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+}
+#lead-map {
+  width: 100%; height: 420px;
+  border-radius: var(--r);
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  z-index: 1;
+}
+.leaflet-popup-content-wrapper {
+  background: #1a1d28 !important;
+  border: 1px solid #2a2f42 !important;
+  border-radius: 8px !important;
+  color: #e8eaf2 !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4) !important;
+}
+.leaflet-popup-tip { background: #1a1d28 !important; }
+.leaflet-popup-content { margin: 12px 14px !important; font-size: 12px; }
+.map-popup-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; color: #e8eaf2; }
+.map-popup-row { display: flex; gap: 6px; margin-bottom: 3px; }
+.map-popup-key { color: #6b7294; min-width: 70px; }
+.map-popup-val { color: #e8eaf2; }
+.map-popup-link { color: #4a9eff; text-decoration: none; font-size: 11px; margin-top: 6px; display: block; }
+.map-popup-link:hover { text-decoration: underline; }
+.map-toggle-btn {
+  padding: 4px 12px; border-radius: 100px;
+  border: 1px solid var(--border2);
+  background: var(--bg); color: var(--muted);
+  font-size: 11px; cursor: pointer;
+  transition: all .15s;
+}
+.map-toggle-btn:hover, .map-toggle-btn.active {
+  border-color: var(--accent); color: var(--accent);
+}
+
 /* ── RESPONSIVE ──────────────────────────────────────────────────────── */
 @media (max-width:600px) {
   header, .toolbar, .stats, .pager { padding-left:12px; padding-right:12px; }
   .table-wrap { padding:0 0 32px; }
   .stats { grid-template-columns:repeat(2, 1fr); gap:8px; }
   .drawer { width:100vw; }
+  #lead-map { height: 280px; }
+  .map-section { padding: 12px; }
 }
 </style>
 </head>
@@ -380,6 +441,23 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
 
 <!-- STAT CARDS -->
 <div class="stats" id="stats"></div>
+
+<!-- MAP -->
+<div class="map-section" id="map-section">
+  <div class="map-header">
+    <span class="map-title">📍 Lead Map</span>
+    <div class="map-legend">
+      <div class="legend-dot"><span style="background:#e84545"></span>Foreclosure</div>
+      <div class="legend-dot"><span style="background:#4a9eff"></span>Judgment</div>
+      <div class="legend-dot"><span style="background:#30d87e"></span>Lien</div>
+      <div class="legend-dot"><span style="background:#9b6dff"></span>Probate</div>
+      <div class="legend-dot"><span style="background:#f5a623"></span>Tax</div>
+      <div class="legend-dot"><span style="background:#6b7294"></span>Other</div>
+    </div>
+    <button class="map-toggle-btn" id="map-toggle-btn" onclick="toggleMap()">Hide Map</button>
+  </div>
+  <div id="lead-map"></div>
+</div>
 
 <!-- TABLE -->
 <div class="table-wrap">
@@ -488,6 +566,8 @@ async function loadData() {
     applyFilters();
     document.getElementById("loading").style.display = "none";
     document.getElementById("lead-table").style.display = "";
+    // Init map with records that have addresses
+    initMap(ALL_RECORDS.filter(r => r.prop_address && r.prop_address !== "N/A"));
   } catch(e) {
     document.getElementById("loading").innerHTML =
       `<p style="color:var(--accent2)">Failed to load records.json — ${e.message}</p>`;
@@ -710,6 +790,115 @@ document.getElementById("export-btn").addEventListener("click", () => {
   a.download = `bcnm_leads_${new Date().toISOString().slice(0,10)}.csv`;
   a.click();
 });
+
+// ── MAP ──────────────────────────────────────────────────────────────────────
+let MAP = null;
+let MAP_MARKERS = null;
+let MAP_VISIBLE = true;
+
+const CAT_COLOR = {
+  foreclosure: "#e84545",
+  judgment:    "#4a9eff",
+  lien:        "#30d87e",
+  probate:     "#9b6dff",
+  tax:         "#f5a623",
+  release:     "#6b7294",
+  other:       "#6b7294",
+};
+
+function makeIcon(color) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36">
+    <path d="M12 0C5.373 0 0 5.373 0 12c0 9 12 24 12 24s12-15 12-24C24 5.373 18.627 0 12 0z"
+      fill="${color}" stroke="rgba(0,0,0,0.3)" stroke-width="1"/>
+    <circle cx="12" cy="12" r="5" fill="rgba(255,255,255,0.9)"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: "",
+    iconSize: [24, 36],
+    iconAnchor: [12, 36],
+    popupAnchor: [0, -36],
+  });
+}
+
+function initMap(records) {
+  if (MAP) { MAP.remove(); MAP = null; }
+
+  MAP = L.map("lead-map", {
+    center: [35.0844, -106.6504],
+    zoom: 11,
+    zoomControl: true,
+  });
+
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: '© <a href="https://carto.com/">CARTO</a>',
+    maxZoom: 19,
+  }).addTo(MAP);
+
+  MAP_MARKERS = L.featureGroup().addTo(MAP);
+
+  const withAddr = records.filter(r => r.prop_address && r.prop_address !== "N/A");
+
+  // Geocode using property address via Nominatim
+  const toGeocode = withAddr.slice(0, 200); // cap at 200 to avoid rate limits
+  let done = 0;
+
+  async function geocodeNext(i) {
+    if (i >= toGeocode.length) {
+      // Auto-fit to all markers
+      if (MAP_MARKERS.getLayers().length > 0) {
+        MAP.fitBounds(MAP_MARKERS.getBounds().pad(0.1));
+      }
+      return;
+    }
+    const r = toGeocode[i];
+    const addr = encodeURIComponent(
+      `${r.prop_address}, ${r.prop_city || "Albuquerque"}, NM`
+    );
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${addr}&format=json&limit=1`,
+        { headers: { "Accept-Language": "en" } }
+      );
+      const data = await res.json();
+      if (data && data[0]) {
+        const lat = parseFloat(data[0].lat);
+        const lng = parseFloat(data[0].lon);
+        const color = CAT_COLOR[r.cat] || "#6b7294";
+        const score_cls = r.score >= 70 ? "color:#e84545" : r.score >= 50 ? "color:#f5a623" : "color:#6b7294";
+        const popup = `
+          <div class="map-popup-title">${r.owner || "Unknown Owner"}</div>
+          <div class="map-popup-row"><span class="map-popup-key">Type</span><span class="map-popup-val">${r.cat_label || r.doc_type}</span></div>
+          <div class="map-popup-row"><span class="map-popup-key">Filed</span><span class="map-popup-val">${r.filed || "—"}</span></div>
+          <div class="map-popup-row"><span class="map-popup-key">Address</span><span class="map-popup-val">${r.prop_address}</span></div>
+          <div class="map-popup-row"><span class="map-popup-key">Score</span><span class="map-popup-val" style="${score_cls};font-weight:700">${r.score}/100</span></div>
+          ${r.clerk_url ? `<a class="map-popup-link" href="${r.clerk_url}" target="_blank">View Clerk Record ↗</a>` : ""}
+        `;
+        L.marker([lat, lng], { icon: makeIcon(color) })
+          .addTo(MAP_MARKERS)
+          .bindPopup(popup, { maxWidth: 260 });
+      }
+    } catch(e) {}
+
+    done++;
+    // Rate limit: 1 request per 300ms for Nominatim
+    setTimeout(() => geocodeNext(i + 1), 300);
+  }
+
+  geocodeNext(0);
+
+  document.getElementById("map-toggle-btn").textContent = "Hide Map";
+  MAP_VISIBLE = true;
+}
+
+function toggleMap() {
+  const section = document.getElementById("lead-map");
+  const btn = document.getElementById("map-toggle-btn");
+  MAP_VISIBLE = !MAP_VISIBLE;
+  section.style.display = MAP_VISIBLE ? "" : "none";
+  btn.textContent = MAP_VISIBLE ? "Hide Map" : "Show Map";
+  if (MAP_VISIBLE && MAP) MAP.invalidateSize();
+}
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
 loadData();
