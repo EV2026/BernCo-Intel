@@ -933,11 +933,77 @@ def build_records(
 # GHL CSV EXPORT
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ── Entity keywords that indicate LLC/Corp (not skip-traceable) ──────────
+ENTITY_KEYWORDS = re.compile(
+    r"\b(LLC|INC|CORP|LLP|LP|LTD|TRUST|PC|PA|PLLC|NA|BANK|CREDIT\s+UNION"
+    r"|FEDERAL|ASSOCIATION|ASSOC|COUNTY|CITY|STATE|DEPARTMENT|DEPT"
+    r"|HOSPITAL|CENTER|FOUNDATION|SERVICES|SOLUTIONS|GROUP|PROPERTIES"
+    r"|HOLDINGS|MANAGEMENT|VENTURES|ENTERPRISES|INVESTMENTS?)\b",
+    re.I
+)
+
+
+def _is_entity(owner: str) -> bool:
+    """Return True if the owner name looks like an LLC/corp/entity."""
+    return bool(ENTITY_KEYWORDS.search(owner))
+
+
+def _parse_name(owner: str) -> tuple[str, str]:
+    """
+    Parse LAST FIRST (kiosk format) into (first, last).
+    Handles:
+      SMITH JOHN          → first=JOHN  last=SMITH
+      RODRIGUEZ BARNIE C  → first=BARNIE last=RODRIGUEZ
+      DONATIEN-MILLS MARIANNE C → first=MARIANNE last=DONATIEN-MILLS
+    """
+    # Remove commas and extra spaces
+    owner = owner.replace(",", " ").strip()
+    parts = owner.split()
+
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return "", parts[0]
+
+    # Last word is often a middle initial — skip it for first name
+    # Format: LASTNAME FIRSTNAME [MIDDLENAME/INITIAL]
+    last  = parts[0]
+    # First name is second word; skip single-letter suffixes at end
+    first_candidates = parts[1:]
+    # Drop trailing single letters (middle initials) if more than 2 parts
+    if len(first_candidates) > 1 and len(first_candidates[-1]) == 1:
+        first_candidates = first_candidates[:-1]
+    first = first_candidates[0] if first_candidates else ""
+
+    return first.title(), last.title()
+
+
+def _dedup_by_owner(records: list[dict]) -> list[dict]:
+    """
+    Remove duplicate owners — keep the highest-scoring record per unique
+    owner+mailing-address combination so we don't skip trace the same
+    person multiple times.
+    """
+    seen: dict[str, dict] = {}
+    for r in records:
+        owner = r.get("owner", "").upper().strip()
+        mail  = r.get("mail_address", "").upper().strip()
+        key   = f"{owner}::{mail}"
+        if key not in seen or r.get("score", 0) > seen[key].get("score", 0):
+            seen[key] = r
+    deduped = list(seen.values())
+    deduped.sort(key=lambda r: -r.get("score", 0))
+    return deduped
+
+
 def export_ghl_csv(records: list[dict], path: Path) -> None:
     """
-    Export skip-trace-ready CSV — name + address columns only (A-J).
-    Columns K-S (lead type, doc type, score, etc.) are intentionally
-    excluded so the file drops cleanly into BatchSkipTracing or similar.
+    Export two skip-trace-ready CSVs:
+      ghl_export_individuals_YYYYMMDD.csv  — real people (skip-traceable)
+      ghl_export_entities_YYYYMMDD.csv     — LLCs/corps (different outreach)
+
+    Both are 10 columns only (A-J), deduplicated by owner+address.
+    Names are parsed from kiosk LAST FIRST format into proper First / Last.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     cols = [
@@ -945,24 +1011,48 @@ def export_ghl_csv(records: list[dict], path: Path) -> None:
         "Mailing Address", "Mailing City", "Mailing State", "Mailing Zip",
         "Property Address", "Property City", "Property State", "Property Zip",
     ]
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=cols)
-        w.writeheader()
-        for r in records:
-            parts = r.get("owner", "").replace(",", " ").split()
-            w.writerow({
-                "First Name":      parts[-1] if len(parts) > 1 else "",
-                "Last Name":       parts[0]  if parts else "",
-                "Mailing Address": r.get("mail_address", ""),
-                "Mailing City":    r.get("mail_city",    ""),
-                "Mailing State":   r.get("mail_state",   ""),
-                "Mailing Zip":     r.get("mail_zip",     ""),
-                "Property Address":r.get("prop_address", ""),
-                "Property City":   r.get("prop_city",    ""),
-                "Property State":  r.get("prop_state",   ""),
-                "Property Zip":    r.get("prop_zip",     ""),
-            })
-    log.info("GHL CSV → %s (%d rows)", path, len(records))
+
+    # Split into individuals vs entities
+    individuals = [r for r in records if not _is_entity(r.get("owner", ""))]
+    entities    = [r for r in records if     _is_entity(r.get("owner", ""))]
+
+    # Deduplicate each group
+    individuals = _dedup_by_owner(individuals)
+    entities    = _dedup_by_owner(entities)
+
+    # Build the two output paths from the base path
+    date_str  = path.stem.split("_")[-1]   # extract YYYYMMDD
+    ind_path  = path.parent / f"ghl_export_individuals_{date_str}.csv"
+    ent_path  = path.parent / f"ghl_export_entities_{date_str}.csv"
+
+    def write_csv(rows: list[dict], dest: Path) -> None:
+        with open(dest, "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=cols)
+            w.writeheader()
+            for r in rows:
+                first, last = _parse_name(r.get("owner", ""))
+                w.writerow({
+                    "First Name":      first,
+                    "Last Name":       last,
+                    "Mailing Address": r.get("mail_address", ""),
+                    "Mailing City":    r.get("mail_city",    ""),
+                    "Mailing State":   r.get("mail_state",   ""),
+                    "Mailing Zip":     r.get("mail_zip",     ""),
+                    "Property Address":r.get("prop_address", ""),
+                    "Property City":   r.get("prop_city",    ""),
+                    "Property State":  r.get("prop_state",   ""),
+                    "Property Zip":    r.get("prop_zip",     ""),
+                })
+
+    write_csv(individuals, ind_path)
+    write_csv(entities,    ent_path)
+
+    log.info("GHL CSV (individuals) → %s (%d rows, deduped from %d)",
+             ind_path, len(individuals),
+             sum(1 for r in records if not _is_entity(r.get("owner",""))))
+    log.info("GHL CSV (entities)    → %s (%d rows, deduped from %d)",
+             ent_path, len(entities),
+             sum(1 for r in records if _is_entity(r.get("owner",""))))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
