@@ -1010,6 +1010,7 @@ def export_ghl_csv(records: list[dict], path: Path) -> None:
         "First Name", "Last Name",
         "Mailing Address", "Mailing City", "Mailing State", "Mailing Zip",
         "Property Address", "Property City", "Property State", "Property Zip",
+        "Days Since Filing", "Date Filed", "Lead Type", "Document Number",
     ]
 
     # Split into individuals vs entities
@@ -1031,17 +1032,31 @@ def export_ghl_csv(records: list[dict], path: Path) -> None:
             w.writeheader()
             for r in rows:
                 first, last = _parse_name(r.get("owner", ""))
+                # Calculate days since filing
+                days_since = ""
+                filed = r.get("filed", "")
+                if filed:
+                    try:
+                        fd = datetime.strptime(filed[:10], "%Y-%m-%d").date()
+                        days_since = (datetime.now(timezone.utc).date() - fd).days
+                    except Exception:
+                        pass
+
                 w.writerow({
-                    "First Name":      first,
-                    "Last Name":       last,
-                    "Mailing Address": r.get("mail_address", ""),
-                    "Mailing City":    r.get("mail_city",    ""),
-                    "Mailing State":   r.get("mail_state",   ""),
-                    "Mailing Zip":     r.get("mail_zip",     ""),
-                    "Property Address":r.get("prop_address", ""),
-                    "Property City":   r.get("prop_city",    ""),
-                    "Property State":  r.get("prop_state",   ""),
-                    "Property Zip":    r.get("prop_zip",     ""),
+                    "First Name":       first,
+                    "Last Name":        last,
+                    "Mailing Address":  r.get("mail_address", ""),
+                    "Mailing City":     r.get("mail_city",    ""),
+                    "Mailing State":    r.get("mail_state",   ""),
+                    "Mailing Zip":      r.get("mail_zip",     ""),
+                    "Property Address": r.get("prop_address", ""),
+                    "Property City":    r.get("prop_city",    ""),
+                    "Property State":   r.get("prop_state",   ""),
+                    "Property Zip":     r.get("prop_zip",     ""),
+                    "Days Since Filing":days_since,
+                    "Date Filed":       filed,
+                    "Lead Type":        r.get("cat_label",   ""),
+                    "Document Number":  r.get("doc_num",     ""),
                 })
 
     write_csv(individuals, ind_path)
@@ -1064,11 +1079,16 @@ async def main() -> None:
     log.info("Bernalillo County Motivated Seller Scraper  v6")
     log.info("Clerk  : %s", KIOSK_URL)
     log.info("Address: ArcGIS REST (coageo.cabq.gov)")
-    log.info("Lookback: %d days", LOOKBACK_DAYS)
+    # Weekend runs pull 30 days so Monday morning email is fully loaded
+    # (Saturday=5, Sunday=6 in Python's weekday())
+    now = datetime.now(timezone.utc)
+    is_weekend   = now.weekday() >= 5
+    lookback     = int(os.getenv("LOOKBACK_DAYS", "30" if is_weekend else "7"))
+    log.info("Lookback: %d days (%s run)", lookback,
+             "weekend 30-day" if is_weekend else "weekday 7-day")
 
-    now       = datetime.now(timezone.utc)
     date_to   = now.date()
-    date_from = (now - timedelta(days=LOOKBACK_DAYS)).date()
+    date_from = (now - timedelta(days=lookback)).date()
 
     date_from_iso = date_from.isoformat()
     date_to_iso   = date_to.isoformat()
