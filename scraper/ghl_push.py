@@ -129,35 +129,32 @@ def build_contact_payload(rec: dict) -> dict:
         rec.get("mail_zip", ""),
     ]))
 
+    # Build property address for the address2 field
+    prop_addr = rec.get("prop_address", "")
+    if rec.get("prop_city"):
+        prop_addr += f", {rec['prop_city']}"
+    if rec.get("prop_zip"):
+        prop_addr += f" {rec['prop_zip']}"
+
     payload = {
-        "locationId":  GHL_LOCATION_ID,
-        "firstName":   first,
-        "lastName":    last,
-        "name":        f"{first} {last}".strip() or owner,
-        "address1":    rec.get("mail_address", ""),
-        "city":        rec.get("mail_city", ""),
-        "state":       rec.get("mail_state", ""),
-        "postalCode":  rec.get("mail_zip", ""),
-        "country":     "US",
-        "tags":        tags,
-        "source":      "BernCo Intel",
-        "customFields": [
-            {"key": "property_address",
-             "field_value": rec.get("prop_address", "")},
-            {"key": "property_city",
-             "field_value": rec.get("prop_city", "")},
-            {"key": "property_zip",
-             "field_value": rec.get("prop_zip", "")},
-            {"key": "doc_number",
-             "field_value": rec.get("doc_num", "")},
-            {"key": "date_filed",
-             "field_value": rec.get("filed", "")},
-            {"key": "seller_score",
-             "field_value": str(rec.get("score", ""))},
-            {"key": "clerk_url",
-             "field_value": rec.get("clerk_url", "")},
-        ],
+        "locationId": GHL_LOCATION_ID,
+        "firstName":  first,
+        "lastName":   last,
+        "name":       f"{first} {last}".strip() or owner,
+        "address1":   rec.get("mail_address", ""),
+        "city":       rec.get("mail_city", ""),
+        "state":      rec.get("mail_state", "NM"),
+        "postalCode": rec.get("mail_zip", ""),
+        "country":    "US",
+        "source":     "BernCo Intel",
+        "tags":       tags,
     }
+
+    # Only include non-empty fields
+    payload = {k: v for k, v in payload.items() if v}
+    # tags and locationId must always be present
+    payload["locationId"] = GHL_LOCATION_ID
+    payload["tags"]       = tags
 
     return payload
 
@@ -232,14 +229,21 @@ def push_contact(rec: dict) -> bool:
     if doc_num:
         payload["tags"].append(doc_num)
 
+    # Log the payload for debugging
+    import json as _json
+    print(f"  → Sending payload: {_json.dumps({k:v for k,v in payload.items() if k != 'tags'})}")
+
     result = ghl_request("POST", "/contacts/", payload)
     if not result:
         print(f"  ✗ Failed to create contact: {owner}")
         return False
 
-    contact_id = result.get("contact", {}).get("id")
+    # Log full response so we can see what GHL returns
+    print(f"  ← Response: {str(result)[:300]}")
+
+    contact_id = (result.get("contact") or {}).get("id") or result.get("id")
     if not contact_id:
-        print(f"  ✗ No contact ID returned for: {owner}")
+        print(f"  ✗ No contact ID in response for: {owner} — full response: {result}")
         return False
 
     # Add note
