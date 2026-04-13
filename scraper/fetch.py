@@ -1011,6 +1011,7 @@ def export_ghl_csv(records: list[dict], path: Path) -> None:
         "Mailing Address", "Mailing City", "Mailing State", "Mailing Zip",
         "Property Address", "Property City", "Property State", "Property Zip",
         "Days Since Filing", "Date Filed", "Lead Type", "Document Number",
+        "Seller Score",
     ]
 
     # Split into individuals vs entities
@@ -1057,6 +1058,7 @@ def export_ghl_csv(records: list[dict], path: Path) -> None:
                     "Date Filed":       filed,
                     "Lead Type":        r.get("cat_label",   ""),
                     "Document Number":  r.get("doc_num",     ""),
+                    "Seller Score":     r.get("score",       ""),
                 })
 
     write_csv(individuals, ind_path)
