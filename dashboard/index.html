@@ -386,6 +386,18 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
 .map-toggle-btn:hover, .map-toggle-btn.active {
   border-color: var(--accent); color: var(--accent);
 }
+.map-score-btn {
+  padding: 3px 10px; border-radius: 100px;
+  border: 1px solid var(--border2);
+  background: var(--bg); color: var(--muted);
+  font-size: 11px; cursor: pointer;
+  transition: all .15s;
+}
+.map-score-btn:hover { border-color: var(--accent); color: var(--accent); }
+.map-score-btn.active {
+  background: var(--accent); color: #000;
+  border-color: var(--accent); font-weight: 600;
+}
 
 /* ── RESPONSIVE ──────────────────────────────────────────────────────── */
 @media (max-width:600px) {
@@ -454,8 +466,16 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
       <div class="legend-dot"><span style="background:#f5a623"></span>Tax</div>
       <div class="legend-dot"><span style="background:#6b7294"></span>Other</div>
     </div>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--muted);margin-right:2px">Score:</span>
+      <button class="map-score-btn active" data-score="0"   onclick="setMapScore(0,this)">All</button>
+      <button class="map-score-btn"        data-score="50"  onclick="setMapScore(50,this)">≥50</button>
+      <button class="map-score-btn"        data-score="70"  onclick="setMapScore(70,this)">≥70 🔥</button>
+      <button class="map-score-btn"        data-score="80"  onclick="setMapScore(80,this)">≥80 ⚡</button>
+    </div>
     <button class="map-toggle-btn" id="map-toggle-btn" onclick="toggleMap()">Hide Map</button>
   </div>
+  <div id="map-count" style="font-size:11px;color:var(--muted);margin-bottom:6px;padding-left:2px"></div>
   <div id="lead-map"></div>
 </div>
 
@@ -795,6 +815,8 @@ document.getElementById("export-btn").addEventListener("click", () => {
 let MAP = null;
 let MAP_MARKERS = null;
 let MAP_VISIBLE = true;
+let MAP_SCORE   = 0;          // minimum score filter for map pins
+let ALL_MAP_LAYERS = [];      // stores all marker layer + score for filtering
 
 const CAT_COLOR = {
   foreclosure: "#e84545",
@@ -836,6 +858,11 @@ function initMap(records) {
   }).addTo(MAP);
 
   MAP_MARKERS = L.featureGroup().addTo(MAP);
+  ALL_MAP_LAYERS = [];
+  MAP_SCORE = 0;
+  document.querySelectorAll(".map-score-btn").forEach((b,i) => {
+    b.classList.toggle("active", i === 0);
+  });
 
   const withAddr = records.filter(r => r.prop_address && r.prop_address !== "N/A");
 
@@ -849,6 +876,7 @@ function initMap(records) {
       if (MAP_MARKERS.getLayers().length > 0) {
         MAP.fitBounds(MAP_MARKERS.getBounds().pad(0.1));
       }
+      updateMapCount();
       return;
     }
     const r = toGeocode[i];
@@ -874,9 +902,10 @@ function initMap(records) {
           <div class="map-popup-row"><span class="map-popup-key">Score</span><span class="map-popup-val" style="${score_cls};font-weight:700">${r.score}/100</span></div>
           ${r.clerk_url ? `<a class="map-popup-link" href="${r.clerk_url}" target="_blank">View Clerk Record ↗</a>` : ""}
         `;
-        L.marker([lat, lng], { icon: makeIcon(color) })
+        const marker = L.marker([lat, lng], { icon: makeIcon(color) })
           .addTo(MAP_MARKERS)
           .bindPopup(popup, { maxWidth: 260 });
+        ALL_MAP_LAYERS.push({ marker, score: r.score });
       }
     } catch(e) {}
 
@@ -889,6 +918,37 @@ function initMap(records) {
 
   document.getElementById("map-toggle-btn").textContent = "Hide Map";
   MAP_VISIBLE = true;
+}
+
+function updateMapCount() {
+  const visible = ALL_MAP_LAYERS.filter(l => l.score >= MAP_SCORE).length;
+  const total   = ALL_MAP_LAYERS.length;
+  const el = document.getElementById("map-count");
+  if (el) el.textContent = MAP_SCORE > 0
+    ? `Showing ${visible} of ${total} pinned leads (score ≥ ${MAP_SCORE})`
+    : `Showing all ${total} pinned leads`;
+}
+
+function setMapScore(minScore, btn) {
+  MAP_SCORE = minScore;
+  // Update active button style
+  document.querySelectorAll(".map-score-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+
+  // Show/hide markers based on score
+  ALL_MAP_LAYERS.forEach(({ marker, score }) => {
+    if (score >= MAP_SCORE) {
+      if (!MAP_MARKERS.hasLayer(marker)) MAP_MARKERS.addLayer(marker);
+    } else {
+      if (MAP_MARKERS.hasLayer(marker)) MAP_MARKERS.removeLayer(marker);
+    }
+  });
+
+  // Re-fit bounds to visible markers
+  if (MAP_MARKERS.getLayers().length > 0) {
+    MAP.fitBounds(MAP_MARKERS.getBounds().pad(0.1));
+  }
+  updateMapCount();
 }
 
 function toggleMap() {
