@@ -464,6 +464,10 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
     <option value="1">Has property address</option>
     <option value="0">No address found</option>
   </select>
+  <button id="res-toggle" class="btn" onclick="toggleResidential()"
+    style="white-space:nowrap; border-color:var(--green); color:var(--green)">
+    🏠 Residential Only: OFF
+  </button>
   <span id="result-count" style="color:var(--muted); margin-left:4px; font-size:12px; white-space:nowrap;"></span>
 </div>
 
@@ -545,13 +549,18 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
 
 <script>
 // ── GLOBALS ────────────────────────────────────────────────────────────────
-let ALL_RECORDS  = [];
-let FILTERED     = [];
-let SORT_COL     = "score";
-let SORT_DIR     = "desc";
-const PAGE_SIZE  = 50;
-let PAGE         = 1;
-let currentDocNum = null;   // doc_num of currently open drawer
+let ALL_RECORDS    = [];
+let FILTERED       = [];
+let SORT_COL       = "score";
+let SORT_DIR       = "desc";
+const PAGE_SIZE    = 50;
+let PAGE           = 1;
+let currentDocNum  = null;   // doc_num of currently open drawer
+let RESIDENTIAL_ONLY = false; // filter to residential properties only
+
+// Entity keywords (mirrors Python scraper)
+const ENTITY_RE = /\b(LLC|INC|CORP|LLP|LP|LTD|TRUST|PC|PA|PLLC|BANK|UNIVERSITY|REGENTS|COLLEGE|HOSPITAL|CHURCH|GOVERNMENT|MUNICIPAL)\b/i;
+function isEntity(owner) { return ENTITY_RE.test(owner || ""); }
 
 // ── CHIP HELPERS ────────────────────────────────────────────────────────────
 const CAT_CLASS = {
@@ -659,6 +668,10 @@ function applyFilters() {
     if (minSc && r.score < minSc) return false;
     if (addr === "1" && !r.prop_address) return false;
     if (addr === "0" && r.prop_address)  return false;
+    // Residential Only filter — hide entities without residential property
+    if (RESIDENTIAL_ONLY) {
+      if (isEntity(r.owner) && !r.is_residential) return false;
+    }
     if (q) {
       const hay = [r.owner,r.grantee,r.doc_num,r.prop_address,r.legal,
                    r.doc_type,r.cat_label].join(" ").toLowerCase();
@@ -821,6 +834,23 @@ function openDrawer(idx) {
   document.getElementById("overlay").classList.add("open");
   document.getElementById("drawer").classList.add("open");
 }
+function toggleResidential() {
+  RESIDENTIAL_ONLY = !RESIDENTIAL_ONLY;
+  const btn = document.getElementById("res-toggle");
+  if (RESIDENTIAL_ONLY) {
+    btn.textContent = "🏠 Residential Only: ON";
+    btn.style.background = "var(--green)";
+    btn.style.color = "#000";
+    btn.style.borderColor = "var(--green)";
+  } else {
+    btn.textContent = "🏠 Residential Only: OFF";
+    btn.style.background = "";
+    btn.style.color = "var(--green)";
+    btn.style.borderColor = "var(--green)";
+  }
+  applyFilters();
+}
+
 function flyToLead(doc_num) {
   if (!MAP || !doc_num) return;
 
