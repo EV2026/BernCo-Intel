@@ -247,6 +247,14 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
   background:rgba(245,166,35,.1); color:var(--accent);
   border-color:rgba(245,166,35,.2);
 }
+.flag-tag.residential {
+  background:rgba(48,216,126,.1); color:var(--green);
+  border-color:rgba(48,216,126,.2);
+}
+.flag-tag.commercial {
+  background:rgba(107,114,148,.1); color:var(--muted);
+  border-color:rgba(107,114,148,.2);
+}
 
 /* ── EMPTY / LOADING STATES ──────────────────────────────────────────── */
 .empty {
@@ -561,13 +569,17 @@ function scoreHTML(n) {
 function flagsHTML(flags) {
   if (!flags?.length) return '<span style="color:var(--muted)">—</span>';
   return `<div class="flags">${flags.map(f => {
-    const danger   = ["Lis pendens","Pre-foreclosure","Judgment lien","Tax lien","Severely underwater"].includes(f);
-    const stack    = f.startsWith("Stacked lead");
-    const warning  = ["Underwater","Low value property"].includes(f);
+    const danger       = ["Lis pendens","Pre-foreclosure","Judgment lien","Tax lien","Severely underwater"].includes(f);
+    const stack        = f.startsWith("Stacked lead");
+    const warning      = ["Underwater","Low value property"].includes(f);
+    const residential  = f === "Residential property";
+    const commercial   = f === "Commercial property";
     let cls = "flag-tag";
-    if (danger)  cls += " danger";
-    if (stack)   cls += " stack";
-    if (warning) cls += " warning";
+    if (danger)      cls += " danger";
+    if (stack)       cls += " stack";
+    if (warning)     cls += " warning";
+    if (residential) cls += " residential";
+    if (commercial)  cls += " commercial";
     return `<span class="${cls}">${f}</span>`;
   }).join("")}</div>`;
 }
