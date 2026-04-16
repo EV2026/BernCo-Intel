@@ -60,8 +60,9 @@ ARCGIS_PARCELS = (
 # Fields we want from the parcel layer
 ARCGIS_FIELDS = (
     "OWNER,UPC,"
-    "SITUSADD,SITUSCITY,SITUSSTATE,SITUSZIP,"   # pre-built site address
-    "OWNADD,OWNADD2,OWNCITY,OWNSTATE,OWNZIPCODE"  # pre-built mailing address
+    "SITUSADD,SITUSCITY,SITUSSTATE,SITUSZIP,"    # pre-built site address
+    "OWNADD,OWNADD2,OWNCITY,OWNSTATE,OWNZIPCODE,"# pre-built mailing address
+    "TOTVALUE,LANDVALUE,IMPTVALUE,TAXYR"          # property value + tax year
 )
 
 # ── Document type map ────────────────────────────────────────────────────────
@@ -211,6 +212,35 @@ def score_record(rec: dict) -> tuple[int, list[str]]:
     if rec.get("prop_address"):
         score += 5
 
+    # ── Property value scoring ─────────────────────────────────────────────
+    tot_val  = rec.get("tot_value")
+    impt_val = rec.get("impt_value")
+
+    if tot_val is not None:
+        # Low value property with debt = distressed
+        if tot_val < 100_000:
+            score += 10
+            flags.append("Low value property")
+        elif tot_val < 200_000:
+            score += 5
+
+    # Severely underwater: debt owed > property value
+    if amount and tot_val and tot_val > 0:
+        debt_ratio = amount / tot_val
+        if debt_ratio > 0.8:
+            score += 15
+            flags.append("Severely underwater")
+        elif debt_ratio > 0.5:
+            score += 8
+            flags.append("Underwater")
+
+    # Mostly land value = undeveloped or neglected structure
+    if tot_val and impt_val is not None and tot_val > 0:
+        impt_ratio = impt_val / tot_val
+        if impt_ratio < 0.2:
+            score += 5
+            flags.append("Low improvement value")
+
     return min(score, 100), flags
 
 
@@ -245,6 +275,12 @@ def _build_address(attrs: dict) -> dict:
     def f(key: str) -> str:
         return clean(attrs.get(key, "") or "")
 
+    def n(key: str):
+        """Return numeric value or None."""
+        v = attrs.get(key)
+        try: return float(v) if v is not None else None
+        except (TypeError, ValueError): return None
+
     return {
         "prop_address": f("SITUSADD"),
         "prop_city":    f("SITUSCITY") or "Albuquerque",
@@ -254,6 +290,10 @@ def _build_address(attrs: dict) -> dict:
         "mail_city":    f("OWNCITY"),
         "mail_state":   f("OWNSTATE") or "NM",
         "mail_zip":     f("OWNZIPCODE"),
+        "tot_value":    n("TOTVALUE"),
+        "land_value":   n("LANDVALUE"),
+        "impt_value":   n("IMPTVALUE"),
+        "tax_year":     f("TAXYR"),
     }
 
 
@@ -903,9 +943,14 @@ def build_records(
                 "mail_city":    addr.get("mail_city",    ""),
                 "mail_state":   addr.get("mail_state",   "NM"),
                 "mail_zip":     addr.get("mail_zip",     ""),
+                "tot_value":    addr.get("tot_value"),
+                "land_value":   addr.get("land_value"),
+                "impt_value":   addr.get("impt_value"),
+                "tax_year":     addr.get("tax_year",     ""),
                 "clerk_url":    clerk_url,
                 "flags":        [],
                 "score":        0,
+                "stack_count":  1,   # updated after all records built
             }
             score, flags = score_record(rec)
             rec["score"]  = score
@@ -914,6 +959,28 @@ def build_records(
 
         except Exception:
             log.warning("Skipping bad record:\n%s", traceback.format_exc())
+
+    # ── Lead stacking: count how many filings per owner ──────────────────
+    # Owners with multiple doc types are far more motivated
+    owner_counts: dict[str, int] = {}
+    for r in records:
+        key = r["owner"].upper().strip()
+        owner_counts[key] = owner_counts.get(key, 0) + 1
+
+    stacked = 0
+    for r in records:
+        key = r["owner"].upper().strip()
+        count = owner_counts.get(key, 1)
+        r["stack_count"] = count
+        if count >= 2:
+            stacked += 1
+            # Re-score with stack bonus
+            bonus = min((count - 1) * 15, 30)   # +15 per extra filing, max +30
+            if "Stacked lead" not in r["flags"]:
+                r["flags"].append(f"Stacked lead ({count} filings)")
+            r["score"] = min(r["score"] + bonus, 100)
+
+    log.info("Lead stacking: %d owners with multiple filings", stacked)
 
     records.sort(key=lambda r: -r["score"])
     with_addr = sum(1 for r in records if r.get("prop_address"))
@@ -1011,7 +1078,7 @@ def export_ghl_csv(records: list[dict], path: Path) -> None:
         "Mailing Address", "Mailing City", "Mailing State", "Mailing Zip",
         "Property Address", "Property City", "Property State", "Property Zip",
         "Days Since Filing", "Date Filed", "Lead Type", "Document Number",
-        "Seller Score",
+        "Seller Score", "Stack Count", "Property Value",
     ]
 
     # Split into individuals vs entities
@@ -1058,7 +1125,9 @@ def export_ghl_csv(records: list[dict], path: Path) -> None:
                     "Date Filed":       filed,
                     "Lead Type":        r.get("cat_label",   ""),
                     "Document Number":  r.get("doc_num",     ""),
-                    "Seller Score":     r.get("score",       ""),
+                    "Seller Score":     r.get("score",        ""),
+                    "Stack Count":      r.get("stack_count",  1),
+                    "Property Value":   f"${r['tot_value']:,.0f}" if r.get("tot_value") else "",
                 })
 
     write_csv(individuals, ind_path)
