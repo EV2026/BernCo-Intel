@@ -996,6 +996,12 @@ def build_records(
             score, flags = score_record(rec)
             rec["score"]  = score
             rec["flags"]  = flags
+
+            # Skip pure commercial properties — residential focus only
+            # (unknown prop_class = no ArcGIS match = keep it, may be residential)
+            if rec.get("is_commercial", False) and not rec.get("is_residential", False):
+                continue
+
             records.append(rec)
 
         except Exception:
