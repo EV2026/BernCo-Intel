@@ -1002,32 +1002,60 @@ def build_records(
             if rec.get("is_commercial", False) and not rec.get("is_residential", False):
                 continue
 
+            # Skip institutional owners regardless of property class
+            # (universities, governments, churches, etc.)
+            if INSTITUTIONAL_KEYWORDS.search(owner):
+                continue
+
+            # Skip entities with no address — can't contact them anyway
+            if _is_entity(owner) and not rec.get("prop_address") and not rec.get("mail_address"):
+                continue
+
             records.append(rec)
 
         except Exception:
             log.warning("Skipping bad record:\n%s", traceback.format_exc())
 
-    # ── Lead stacking: count how many filings per owner ──────────────────
-    # Owners with multiple doc types are far more motivated
-    owner_counts: dict[str, int] = {}
+    # ── Lead stacking: count filings per owner, then deduplicate ──────────
+    # Owners with multiple doc types are far more motivated.
+    # We keep only the BEST (highest scoring) record per owner,
+    # enriched with all the doc types from their other filings.
+    owner_groups: dict[str, list[dict]] = {}
     for r in records:
         key = r["owner"].upper().strip()
-        owner_counts[key] = owner_counts.get(key, 0) + 1
+        if key not in owner_groups:
+            owner_groups[key] = []
+        owner_groups[key].append(r)
 
+    deduped_records: list[dict] = []
     stacked = 0
-    for r in records:
-        key = r["owner"].upper().strip()
-        count = owner_counts.get(key, 1)
-        r["stack_count"] = count
+
+    for key, group in owner_groups.items():
+        count = len(group)
+        # Pick the highest scoring record as the representative
+        best = max(group, key=lambda r: r.get("score", 0))
+        best["stack_count"] = count
+
         if count >= 2:
             stacked += 1
-            # Re-score with stack bonus
-            bonus = min((count - 1) * 15, 30)   # +15 per extra filing, max +30
-            if "Stacked lead" not in r["flags"]:
-                r["flags"].append(f"Stacked lead ({count} filings)")
-            r["score"] = min(r["score"] + bonus, 100)
+            # Collect all unique doc types from the group
+            all_doc_types = list({r["cat_label"] for r in group})
+            bonus = min((count - 1) * 15, 30)
+            # Replace any old stacked flag
+            best["flags"] = [f for f in best["flags"]
+                             if not f.startswith("Stacked lead")]
+            best["flags"].append(
+                f"Stacked lead ({count} filings: {', '.join(all_doc_types)})"
+            )
+            best["score"] = min(best["score"] + bonus, 100)
+        else:
+            best["stack_count"] = 1
 
-    log.info("Lead stacking: %d owners with multiple filings", stacked)
+        deduped_records.append(best)
+
+    records = deduped_records
+    log.info("Lead stacking: %d owners with multiple filings (deduped %d → %d records)",
+             stacked, sum(len(g) for g in owner_groups.values()), len(records))
 
     records.sort(key=lambda r: -r["score"])
     with_addr = sum(1 for r in records if r.get("prop_address"))
@@ -1052,7 +1080,21 @@ ENTITY_KEYWORDS = re.compile(
     r"\b(LLC|INC|CORP|LLP|LP|LTD|TRUST|PC|PA|PLLC|NA|BANK|CREDIT\s+UNION"
     r"|FEDERAL|ASSOCIATION|ASSOC|COUNTY|CITY|STATE|DEPARTMENT|DEPT"
     r"|HOSPITAL|CENTER|FOUNDATION|SERVICES|SOLUTIONS|GROUP|PROPERTIES"
-    r"|HOLDINGS|MANAGEMENT|VENTURES|ENTERPRISES|INVESTMENTS?)\b",
+    r"|HOLDINGS|MANAGEMENT|VENTURES|ENTERPRISES|INVESTMENTS?"
+    r"|UNIVERSITY|UNIVERSITIES|REGENTS|COLLEGE|SCHOOL|DISTRICT"
+    r"|GOVERNMENT|MUNICIPAL|AUTHORITY|AGENCY|BOARD|COMMISSION"
+    r"|CHURCH|PARISH|DIOCESE|MINISTRY|TEMPLE|MOSQUE"
+    r"|NONPROFIT|NON-PROFIT|CHARITY|CHARITIES)\b",
+    re.I
+)
+
+# Institutional owners that should always be excluded regardless of prop class
+INSTITUTIONAL_KEYWORDS = re.compile(
+    r"\b(UNIVERSITY|UNIVERSITIES|REGENTS|COLLEGE|SCHOOL\s+DISTRICT"
+    r"|GOVERNMENT|MUNICIPAL|AUTHORITY|CHURCH|PARISH|DIOCESE"
+    r"|UNITED\s+STATES|US\s+GOVT|FEDERAL\s+GOVT"
+    r"|ALBUQUERQUE\s+PUBLIC|BERNALILLO\s+COUNTY|CITY\s+OF"
+    r"|STATE\s+OF\s+NEW|NEW\s+MEXICO\s+STATE)\b",
     re.I
 )
 
