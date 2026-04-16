@@ -275,8 +275,11 @@ def main() -> None:
     hot = [
         r for r in records
         if r.get("score", 0) >= HOT_THRESHOLD
-        and not is_entity(r.get("owner", ""))
         and r.get("owner", "")   # must have an owner name
+        and (
+            not is_entity(r.get("owner", ""))   # real person
+            or r.get("is_residential", False)    # OR LLC with residential property
+        )
     ]
 
     print(f"Total records : {len(records)}")
