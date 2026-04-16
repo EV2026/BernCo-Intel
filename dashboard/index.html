@@ -239,6 +239,14 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
   background:rgba(232,69,69,.1); color:var(--accent2);
   border-color:rgba(232,69,69,.2);
 }
+.flag-tag.stack {
+  background:rgba(155,109,255,.15); color:var(--purple);
+  border-color:rgba(155,109,255,.3); font-weight:600;
+}
+.flag-tag.warning {
+  background:rgba(245,166,35,.1); color:var(--accent);
+  border-color:rgba(245,166,35,.2);
+}
 
 /* ── EMPTY / LOADING STATES ──────────────────────────────────────────── */
 .empty {
@@ -553,8 +561,14 @@ function scoreHTML(n) {
 function flagsHTML(flags) {
   if (!flags?.length) return '<span style="color:var(--muted)">—</span>';
   return `<div class="flags">${flags.map(f => {
-    const danger = ["Lis pendens","Pre-foreclosure","Judgment lien","Tax lien"].includes(f);
-    return `<span class="flag-tag${danger?" danger":""}">${f}</span>`;
+    const danger   = ["Lis pendens","Pre-foreclosure","Judgment lien","Tax lien","Severely underwater"].includes(f);
+    const stack    = f.startsWith("Stacked lead");
+    const warning  = ["Underwater","Low value property"].includes(f);
+    let cls = "flag-tag";
+    if (danger)  cls += " danger";
+    if (stack)   cls += " stack";
+    if (warning) cls += " warning";
+    return `<span class="${cls}">${f}</span>`;
   }).join("")}</div>`;
 }
 function fmt$$(n) {
@@ -680,7 +694,10 @@ function renderTable() {
       <td class="mono">${r.filed||"—"}</td>
       <td>${chipHTML(r)}</td>
       <td>
-        <div style="font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.owner||"—"}</div>
+        <div style="font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          ${r.owner||"—"}
+          ${(r.stack_count||1)>1?`<span style="margin-left:5px;background:rgba(155,109,255,.2);color:var(--purple);font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700">×${r.stack_count}</span>`:""}
+        </div>
         ${r.grantee?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${r.grantee}</div>`:""}
       </td>
       <td style="max-width:220px">
@@ -769,6 +786,10 @@ function openDrawer(idx) {
     ["Property",      r.prop_address ? `${r.prop_address}, ${r.prop_city||""} ${r.prop_state||""} ${r.prop_zip||""}`.replace(/\s+/g," ") : "—"],
     ["Mail Address",  r.mail_address ? `${r.mail_address}, ${r.mail_city||""} ${r.mail_state||""} ${r.mail_zip||""}`.replace(/\s+/g," ") : "—"],
     ["Seller Score",  scoreHTML(r.score)],
+    ["Stack Count",   (r.stack_count||1) > 1
+      ? `<span style="color:var(--purple);font-weight:700">${r.stack_count} filings — stacked lead 🔥</span>`
+      : "1 filing"],
+    ["Prop. Value",   r.tot_value ? "$" + Number(r.tot_value).toLocaleString() : "—"],
     ["Flags",         flagsHTML(r.flags)],
     ["Clerk URL",     r.clerk_url ? `<a href="${r.clerk_url}" target="_blank">${r.clerk_url}</a>` : "—"],
   ];
