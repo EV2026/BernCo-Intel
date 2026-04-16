@@ -62,8 +62,26 @@ ARCGIS_FIELDS = (
     "OWNER,UPC,"
     "SITUSADD,SITUSCITY,SITUSSTATE,SITUSZIP,"    # pre-built site address
     "OWNADD,OWNADD2,OWNCITY,OWNSTATE,OWNZIPCODE,"# pre-built mailing address
-    "TOTVALUE,LANDVALUE,IMPTVALUE,TAXYR"          # property value + tax year
+    "TOTVALUE,LANDVALUE,IMPTVALUE,TAXYR,"         # property value + tax year
+    "PROPCLASS,ROLLTYPE"                          # property class for residential filter
 )
+
+# Bernalillo County residential PROPCLASS codes
+# Codes starting with 0 = real property, 01xx = residential
+RESIDENTIAL_CLASSES = {
+    "0101",  # single family residential
+    "0102",  # single family residential (modular/mobile)
+    "0103",  # single family residential (rural)
+    "0104",  # townhouse / condo
+    "0105",  # 2-4 unit residential
+    "0106",  # residential vacant land
+    "0199",  # other residential
+}
+COMMERCIAL_CLASSES = {
+    "0201","0202","0203","0204","0205","0206","0207","0208","0209",  # commercial
+    "0301","0302","0303","0304",                                      # industrial
+    "0401","0402","0403",                                             # agricultural
+}
 
 # ── Document type map ────────────────────────────────────────────────────────
 DOC_TYPE_MAP: dict[str, tuple[str, str]] = {
@@ -212,6 +230,18 @@ def score_record(rec: dict) -> tuple[int, list[str]]:
     if rec.get("prop_address"):
         score += 5
 
+    # ── Residential vs commercial scoring ─────────────────────────────────
+    is_res = rec.get("is_residential", False)
+    is_com = rec.get("is_commercial",  False)
+
+    if is_res:
+        score += 15                          # big boost for residential
+        flags.append("Residential property")
+    elif is_com:
+        score -= 10                          # penalize pure commercial
+        flags.append("Commercial property")
+    # Unknown prop_class (no ArcGIS match) — neutral, no change
+
     # ── Property value scoring ─────────────────────────────────────────────
     tot_val  = rec.get("tot_value")
     impt_val = rec.get("impt_value")
@@ -281,6 +311,8 @@ def _build_address(attrs: dict) -> dict:
         try: return float(v) if v is not None else None
         except (TypeError, ValueError): return None
 
+    prop_class = f("PROPCLASS").strip()
+
     return {
         "prop_address": f("SITUSADD"),
         "prop_city":    f("SITUSCITY") or "Albuquerque",
@@ -294,6 +326,12 @@ def _build_address(attrs: dict) -> dict:
         "land_value":   n("LANDVALUE"),
         "impt_value":   n("IMPTVALUE"),
         "tax_year":     f("TAXYR"),
+        "prop_class":   prop_class,
+        "is_residential": (
+            prop_class[:2] == "01" or          # starts with 01 = residential
+            prop_class in RESIDENTIAL_CLASSES
+        ),
+        "is_commercial": prop_class in COMMERCIAL_CLASSES,
     }
 
 
@@ -943,11 +981,14 @@ def build_records(
                 "mail_city":    addr.get("mail_city",    ""),
                 "mail_state":   addr.get("mail_state",   "NM"),
                 "mail_zip":     addr.get("mail_zip",     ""),
-                "tot_value":    addr.get("tot_value"),
-                "land_value":   addr.get("land_value"),
-                "impt_value":   addr.get("impt_value"),
-                "tax_year":     addr.get("tax_year",     ""),
-                "clerk_url":    clerk_url,
+                "tot_value":      addr.get("tot_value"),
+                "land_value":     addr.get("land_value"),
+                "impt_value":     addr.get("impt_value"),
+                "tax_year":       addr.get("tax_year",      ""),
+                "prop_class":     addr.get("prop_class",    ""),
+                "is_residential": addr.get("is_residential", False),
+                "is_commercial":  addr.get("is_commercial",  False),
+                "clerk_url":      clerk_url,
                 "flags":        [],
                 "score":        0,
                 "stack_count":  1,   # updated after all records built
@@ -1082,8 +1123,18 @@ def export_ghl_csv(records: list[dict], path: Path) -> None:
     ]
 
     # Split into individuals vs entities
-    individuals = [r for r in records if not _is_entity(r.get("owner", ""))]
-    entities    = [r for r in records if     _is_entity(r.get("owner", ""))]
+    # KEY CHANGE: Include entity-owned records if the property is residential
+    # A landlord LLC with a Lis Pendens on a house is just as valuable
+    individuals = [
+        r for r in records
+        if not _is_entity(r.get("owner", ""))        # real person
+        or r.get("is_residential", False)             # OR LLC but residential property
+    ]
+    entities = [
+        r for r in records
+        if _is_entity(r.get("owner", ""))
+        and not r.get("is_residential", False)        # entity AND NOT residential
+    ]
 
     # Deduplicate each group
     individuals = _dedup_by_owner(individuals)
