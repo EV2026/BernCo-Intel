@@ -65,14 +65,15 @@ jobs:
           SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
           ALERT_EMAIL:      ${{ secrets.ALERT_EMAIL }}
           FROM_EMAIL:       "JonathanG@envisionventuresllc.com"
-          HOT_THRESHOLD:    "50"
+          HOT_THRESHOLD:    "70"
         run: python scraper/alert.py
 
       - name: Push leads to GoHighLevel
         env:
           GHL_API_KEY:     ${{ secrets.GHL_API_KEY }}
           GHL_LOCATION_ID: ${{ secrets.GHL_LOCATION_ID }}
-          HOT_THRESHOLD:   "70"
+          GHL_STAGE_NAME:  ${{ secrets.GHL_STAGE_NAME }}
+          HOT_THRESHOLD:   "50"
         run: python scraper/ghl_push.py
 
       - name: Commit updated records
