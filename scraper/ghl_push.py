@@ -249,6 +249,22 @@ def contact_exists(doc_num: str) -> str | None:
     return None
 
 
+def opportunity_exists(contact_id: str) -> bool:
+    """
+    Check if an opportunity already exists for this contact in our pipeline.
+    Returns True if found, False otherwise.
+    """
+    if not PIPELINE_ID:
+        return False
+    result = ghl_request(
+        "GET",
+        f"/opportunities/search?locationId={GHL_LOCATION_ID}&contactId={contact_id}&pipelineId={PIPELINE_ID}",
+    )
+    if result and result.get("opportunities"):
+        return True
+    return False
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # Opportunity Creation (shared by both modes)
 # ══════════════════════════════════════════════════════════════════════════
@@ -294,6 +310,18 @@ def push_contact(rec: dict) -> bool:
     existing_id = contact_exists(doc_num)
     if existing_id:
         print(f"  ↷ Already in GHL: {owner} ({doc_num})")
+        # Still create opportunity if one doesn't exist yet
+        if PIPELINE_ID and not opportunity_exists(existing_id):
+            prop = rec.get("prop_address", "").strip()
+            if rec.get("prop_city"):
+                prop += f", {rec['prop_city']}"
+            opp_name = prop or owner
+            create_opportunity(
+                contact_id=existing_id,
+                opp_name=opp_name,
+                lead_type=rec.get("cat_label", rec.get("doc_type", "")),
+                score=rec.get("score", 0),
+            )
         return True
 
     payload = build_contact_payload(rec)
@@ -497,6 +525,19 @@ def push_from_csv(csv_path: str) -> None:
             existing_id = contact_exists(doc_num)
             if existing_id:
                 print(f"  ↷ Already in GHL: {label} ({doc_num})")
+                # Still create opportunity if one doesn't exist yet
+                if PIPELINE_ID and not opportunity_exists(existing_id):
+                    prop = row.get("Property Address", "").strip()
+                    prop_city = row.get("Property City", "").strip()
+                    if prop_city:
+                        prop += f", {prop_city}"
+                    opp_name = prop or label
+                    create_opportunity(
+                        contact_id=existing_id,
+                        opp_name=opp_name,
+                        lead_type=row.get("Lead Type", ""),
+                        score=int(row.get("Seller Score", "0") or 0),
+                    )
                 skipped += 1
                 continue
 
