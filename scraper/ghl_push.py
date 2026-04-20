@@ -520,12 +520,35 @@ def push_from_csv(csv_path: str) -> None:
         last_raw   = row.get("Last Name", "").strip()
         label      = f"{first_raw} {last_raw}".strip() or doc_num or "Unknown"
 
-        # Dedup check
+        # Dedup check — if contact exists, enrich with skip trace data
         if doc_num:
             existing_id = contact_exists(doc_num)
             if existing_id:
-                print(f"  ↷ Already in GHL: {label} ({doc_num})")
-                # Still create opportunity if one doesn't exist yet
+                print(f"  ↷ Existing contact — enriching: {label} ({doc_num})")
+
+                # Build enrichment payload with skip trace phones/emails
+                phones = extract_phones_from_row(row)
+                emails = extract_emails_from_row(row)
+                enrich = {}
+                if phones:
+                    enrich["phone"] = phones[0]
+                if emails:
+                    enrich["email"] = emails[0]
+                # Add Skip Traced tag
+                enrich["tags"] = ["Skip Traced"]
+
+                if enrich:
+                    ghl_request("PUT", f"/contacts/{existing_id}", enrich)
+                    print(f"  ✓ Enriched: {label} — phone: {phones[0] if phones else 'none'} | email: {emails[0] if emails else 'none'}")
+
+                # Add a note with extra phones/emails
+                note_body = build_note_from_csv(row, phones, emails)
+                ghl_request("POST", f"/contacts/{existing_id}/notes", {
+                    "body": note_body,
+                    "userId": "",
+                })
+
+                # Create opportunity if one doesn't exist yet
                 if PIPELINE_ID and not opportunity_exists(existing_id):
                     prop = row.get("Property Address", "").strip()
                     prop_city = row.get("Property City", "").strip()
