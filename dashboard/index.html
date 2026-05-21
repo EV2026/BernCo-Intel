@@ -84,6 +84,33 @@ header {
 .header-spacer { flex:1; }
 
 /* ── TOOLBAR ──────────────────────────────────────────────────────────── */
+.date-range-wrap {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+}
+.date-range-wrap label {
+  font-size: 11px; color: var(--muted);
+  white-space: nowrap;
+}
+.date-input {
+  background: var(--surface); border: 1px solid var(--border2);
+  color: var(--fg); border-radius: var(--r);
+  padding: 6px 8px; font-size: 12px;
+  font-family: var(--ff-body);
+  cursor: pointer; width: 130px;
+  color-scheme: dark;
+}
+.date-input:focus {
+  outline: none; border-color: var(--accent);
+}
+.date-clear-btn {
+  background: none; border: none;
+  color: var(--muted); cursor: pointer;
+  font-size: 14px; padding: 0 2px;
+  line-height: 1;
+  transition: color .15s;
+}
+.date-clear-btn:hover { color: var(--accent2); }
 .toolbar {
   display:flex; gap:8px; flex-wrap:wrap; align-items:center;
   padding: 12px 24px;
@@ -464,6 +491,15 @@ td.mono { font-family: var(--ff-mono); font-size:12px; }
     <option value="1">Has property address</option>
     <option value="0">No address found</option>
   </select>
+  <div class="date-range-wrap">
+    <label>📅 From</label>
+    <input type="date" id="filter-date-from" class="date-input"
+      onchange="applyFilters()" title="Filter leads filed from this date"/>
+    <label>To</label>
+    <input type="date" id="filter-date-to" class="date-input"
+      onchange="applyFilters()" title="Filter leads filed up to this date"/>
+    <button class="date-clear-btn" onclick="clearDateFilter()" title="Clear date filter">✕</button>
+  </div>
   <button id="res-toggle" class="btn" onclick="toggleResidential()"
     style="white-space:nowrap; border-color:var(--green); color:var(--green)">
     🏠 Residential Only: OFF
@@ -658,16 +694,21 @@ function buildStats(data) {
 
 // ── FILTER + SORT ─────────────────────────────────────────────────────────────
 function applyFilters() {
-  const q     = document.getElementById("search").value.toLowerCase().trim();
-  const cat   = document.getElementById("filter-cat").value;
-  const minSc = parseInt(document.getElementById("filter-score").value) || 0;
-  const addr  = document.getElementById("filter-addr").value;
+  const q        = document.getElementById("search").value.toLowerCase().trim();
+  const cat      = document.getElementById("filter-cat").value;
+  const minSc    = parseInt(document.getElementById("filter-score").value) || 0;
+  const addr     = document.getElementById("filter-addr").value;
+  const dateFrom = document.getElementById("filter-date-from").value;  // "YYYY-MM-DD" or ""
+  const dateTo   = document.getElementById("filter-date-to").value;    // "YYYY-MM-DD" or ""
 
   FILTERED = ALL_RECORDS.filter(r => {
     if (cat   && r.cat !== cat) return false;
     if (minSc && r.score < minSc) return false;
     if (addr === "1" && !r.prop_address) return false;
     if (addr === "0" && r.prop_address)  return false;
+    // Date range filter — compare filed date (YYYY-MM-DD string, sorts correctly)
+    if (dateFrom && r.filed && r.filed < dateFrom) return false;
+    if (dateTo   && r.filed && r.filed > dateTo)   return false;
     // Residential Only filter — hide entities without residential property
     if (RESIDENTIAL_ONLY) {
       if (isEntity(r.owner) && !r.is_residential) return false;
@@ -786,7 +827,8 @@ document.querySelectorAll("thead th[data-col]").forEach(th => {
 document.querySelector('th[data-col="score"]').classList.add("sort-desc");
 
 // ── FILTER EVENTS ─────────────────────────────────────────────────────────────
-["search","filter-cat","filter-score","filter-addr"].forEach(id => {
+["search","filter-cat","filter-score","filter-addr",
+ "filter-date-from","filter-date-to"].forEach(id => {
   document.getElementById(id).addEventListener("input", applyFilters);
   document.getElementById(id).addEventListener("change", applyFilters);
 });
@@ -834,6 +876,12 @@ function openDrawer(idx) {
   document.getElementById("overlay").classList.add("open");
   document.getElementById("drawer").classList.add("open");
 }
+function clearDateFilter() {
+  document.getElementById("filter-date-from").value = "";
+  document.getElementById("filter-date-to").value   = "";
+  applyFilters();
+}
+
 function toggleResidential() {
   RESIDENTIAL_ONLY = !RESIDENTIAL_ONLY;
   const btn = document.getElementById("res-toggle");
